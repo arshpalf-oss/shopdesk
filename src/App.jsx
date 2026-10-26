@@ -32,6 +32,7 @@ import {
   X,
   Download,
   Info,
+  Undo2,
 } from "lucide-react";
 import {
   DeskContext,
@@ -78,6 +79,7 @@ import {
   CreditForm,
 } from "./Billing.jsx";
 import { Purchases, PurchaseForm, PurchaseView } from "./Purchases.jsx";
+import { Returns, ReturnForm, ReturnView } from "./Returns.jsx";
 import Reports from "./Reports.jsx";
 import { Settings, SetupForm, RestoreForm } from "./Settings.jsx";
 const initial = {
@@ -91,6 +93,7 @@ const initial = {
   purchases: [],
   payments: [],
   credits: [],
+  returns: [],
   movements: [],
   server_date: today(),
   backup_at: null,
@@ -101,6 +104,7 @@ const nav = [
     items: [
       ["overview", "Overview", LayoutDashboard],
       ["billing", "Billing & invoices", ReceiptText],
+      ["returns", "Customer returns", Undo2],
       ["inventory", "Inventory", Boxes],
       ["clients", "Clients & pets", UsersRound],
       ["purchases", "Purchases", Truck],
@@ -361,6 +365,7 @@ export default function App() {
   const views = {
     overview: <Overview />,
     billing: <Billing />,
+    returns: <Returns />,
     inventory: <Catalog />,
     clients: <Clients />,
     purchases: <Purchases />,
@@ -630,6 +635,8 @@ function ModalRouter({ type, props }) {
     credit: CreditForm,
     purchase: PurchaseForm,
     purchaseView: PurchaseView,
+    return: ReturnForm,
+    returnView: ReturnView,
     restore: RestoreForm,
     confirm: ConfirmDialog,
     help: HelpDialog,
@@ -663,8 +670,14 @@ function HelpDialog() {
     [
       "04",
       "Bill, collect, and keep track",
-      "Save a draft or issue a numbered invoice. Issuing deducts stock; payments are recorded separately. Download an A4 PDF anytime.",
+      "Save a draft or issue a numbered invoice. Issuing deducts stock; payments are recorded separately. If something comes back, use Return items on the issued invoice.",
       "billing",
+    ],
+    [
+      "05",
+      "Take returns without the guesswork",
+      "Record what came back, whether it is resellable, and restock the original batch. Refunds are recorded separately once paid.",
+      "returns",
     ],
   ];
   return (
@@ -848,6 +861,17 @@ function SearchDialog() {
         sub: i.customer.name || "Walk-in client",
         icon: ReceiptText,
         fn: () => open("invoiceView", { id: i.id }),
+      })),
+    ...state.returns
+      .filter((r) =>
+        matches(q, r.number, r.invoice_number, r.client_name, r.reason),
+      )
+      .map((r) => ({
+        type: "Return",
+        name: r.number,
+        sub: `${r.client_name || "Walk-in client"} · ${money(r.total)}`,
+        icon: Undo2,
+        fn: () => open("returnView", { id: r.id }),
       })),
   ].slice(0, 20);
   return (

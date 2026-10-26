@@ -20,6 +20,7 @@ import {
   PackageCheck,
   Package,
   Stethoscope,
+  Undo2,
 } from "lucide-react";
 import {
   useDesk,
@@ -269,9 +270,13 @@ export default function Overview() {
     ),
     issued = invoices.filter((i) => i.status !== "draft");
   const credits = state.credits.filter((c) => c.date >= start && c.date <= end);
+  const returns = state.returns.filter(
+      (r) => r.date >= start && r.date <= end,
+    );
   const sales =
       issued.reduce((n, i) => n + i.total, 0) -
-      credits.reduce((n, c) => n + c.total, 0),
+      credits.reduce((n, c) => n + c.total, 0) -
+      returns.reduce((n, r) => n + r.total, 0),
     due = state.invoices.reduce((n, i) => n + i.balance, 0),
     inventoryValue = state.products.reduce((n, p) => n + p.stock_value, 0);
   const totalProducts = state.products.filter(
@@ -391,7 +396,7 @@ export default function Overview() {
                 : range === "today"
                   ? "Today"
                   : "Last 7 days"}{" "}
-              · before credit notes
+              · before returns & credit notes
             </span>
           </div>
           <RevenueChart invoices={invoices} start={start} end={end} />
@@ -423,6 +428,13 @@ export default function Overview() {
                 text: "A place for every pet parent",
                 type: "client",
                 tone: "purple",
+              },
+              {
+                icon: Undo2,
+                title: "Record a customer return",
+                text: "Take items back and settle stock",
+                type: "return",
+                tone: "amber",
               },
             ].map((a) => (
               <button key={a.type} onClick={() => open(a.type)}>

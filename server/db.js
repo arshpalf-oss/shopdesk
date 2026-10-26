@@ -39,6 +39,30 @@ CREATE TABLE IF NOT EXISTS invoices (
 );
 CREATE TABLE IF NOT EXISTS allocations (id TEXT PRIMARY KEY, invoice_id TEXT NOT NULL REFERENCES invoices(id), product_id TEXT NOT NULL REFERENCES products(id), batch_id TEXT NOT NULL REFERENCES batches(id), line_index INTEGER NOT NULL, qty REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS credits (id TEXT PRIMARY KEY, number TEXT NOT NULL UNIQUE, invoice_id TEXT NOT NULL UNIQUE REFERENCES invoices(id), date TEXT NOT NULL, reason TEXT NOT NULL, total INTEGER NOT NULL, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS returns (
+ id TEXT PRIMARY KEY, number TEXT NOT NULL UNIQUE, invoice_id TEXT NOT NULL REFERENCES invoices(id),
+ date TEXT NOT NULL, reason TEXT NOT NULL, notes TEXT NOT NULL DEFAULT '',
+ subtotal INTEGER NOT NULL, discount INTEGER NOT NULL, taxable INTEGER NOT NULL,
+ cgst INTEGER NOT NULL, sgst INTEGER NOT NULL, igst INTEGER NOT NULL, tax INTEGER NOT NULL,
+ total INTEGER NOT NULL, rounding INTEGER NOT NULL DEFAULT 0, refund_due INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS returns_invoice ON returns(invoice_id);
+CREATE TABLE IF NOT EXISTS return_lines (
+ id TEXT PRIMARY KEY, return_id TEXT NOT NULL REFERENCES returns(id), invoice_id TEXT NOT NULL REFERENCES invoices(id),
+ line_index INTEGER NOT NULL, product_id TEXT NOT NULL REFERENCES products(id),
+ name TEXT NOT NULL, hsn TEXT NOT NULL, unit TEXT NOT NULL, type TEXT NOT NULL, tax_treatment TEXT NOT NULL,
+ gst_rate REAL NOT NULL, qty REAL NOT NULL, rate INTEGER NOT NULL, discount REAL NOT NULL DEFAULT 0,
+ gross INTEGER NOT NULL, discount_amount INTEGER NOT NULL, taxable INTEGER NOT NULL,
+ cgst INTEGER NOT NULL, sgst INTEGER NOT NULL, igst INTEGER NOT NULL, tax INTEGER NOT NULL, total INTEGER NOT NULL,
+ condition TEXT NOT NULL, created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS return_lines_invoice ON return_lines(invoice_id, line_index);
+CREATE TABLE IF NOT EXISTS return_allocations (
+ id TEXT PRIMARY KEY, return_id TEXT NOT NULL REFERENCES returns(id),
+ allocation_id TEXT NOT NULL REFERENCES allocations(id), product_id TEXT NOT NULL REFERENCES products(id),
+ batch_id TEXT NOT NULL REFERENCES batches(id), qty REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS return_allocations_allocation ON return_allocations(allocation_id);
 CREATE TABLE IF NOT EXISTS payments (id TEXT PRIMARY KEY, invoice_id TEXT REFERENCES invoices(id), purchase_id TEXT REFERENCES purchases(id), direction TEXT NOT NULL, amount INTEGER NOT NULL, method TEXT NOT NULL, reference TEXT NOT NULL DEFAULT '', date TEXT NOT NULL, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS movements (id TEXT PRIMARY KEY, product_id TEXT NOT NULL REFERENCES products(id), batch_id TEXT REFERENCES batches(id), type TEXT NOT NULL, qty REAL NOT NULL, reference TEXT NOT NULL, note TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS counters (key TEXT PRIMARY KEY, value INTEGER NOT NULL);
