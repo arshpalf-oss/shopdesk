@@ -25,16 +25,19 @@ import {
   saveProduct,
   saveInvoice,
   savePurchase,
+  saveReturn,
   creditInvoice,
   recordPayment,
   getInvoice,
   paidFor,
   purchasePaid,
+  refundDueFor,
+  returnedTotalFor,
   addBatch,
   movement,
   buildState,
 } from "./domain.js";
-import { invoicePDF, thermalPDF } from "./pdf.js";
+import { invoicePDF, thermalPDF, returnPDF } from "./pdf.js";
 import { printPreferences, INVOICE_TEMPLATES } from "../printing.js";
 import { today, paise, quantity, HSN_CODES } from "../shared.js";
 // A portable production launcher: works on Windows, macOS, and Linux.
@@ -90,6 +93,7 @@ function checkPassword(p) {
   if (typeof p !== "string" || p.length < 8 || p.length > 128)
     fail("Use an owner password of 8–128 characters");
 }
+const BACKUP_VERSION = 2;
 const BACKUP_TABLES = [
   "products",
   "clients",
@@ -100,11 +104,17 @@ const BACKUP_TABLES = [
   "invoices",
   "allocations",
   "credits",
+  "returns",
+  "return_lines",
+  "return_allocations",
   "payments",
   "movements",
   "counters",
 ];
 const DELETE_ORDER = [
+  "return_allocations",
+  "return_lines",
+  "returns",
   "payments",
   "credits",
   "allocations",
@@ -461,7 +471,11 @@ export async function createApp() {
           fail("Payments can only be recorded against issued invoices");
         if (p.date < inv.date)
           fail("Payment date cannot precede the invoice date");
-        if (paise(p.amount) > inv.total - paidFor(inv.id))
+        const outstanding = Math.max(
+          0,
+          inv.total - returnedTotalFor(inv.id) - paidFor(inv.id),
+        );
+        if (paise(p.amount) > outstanding)
           fail("Payment exceeds the outstanding balance");
         recordPayment(inv.id, null, p);
       })();
@@ -488,12 +502,28 @@ export async function createApp() {
           p = parse(paymentSchema, req.body),
           credit = db
             .prepare("SELECT * FROM credits WHERE invoice_id=?")
-            .get(inv.id);
-        if (inv.status !== "credited")
-          fail("Create a credit note before recording a refund");
-        if (p.date < credit.date)
+            .get(inv.id),
+          lastReturn = db
+            .prepare("SELECT MAX(date) AS d FROM returns WHERE invoice_id=?")
+            .get(inv.id).d;
+        if (inv.status === "draft")
+          fail("Refunds can only be recorded against issued invoices");
+        if (credit && inv.status !== "credited")
+          fail("This invoice has an inconsistent credit record");
+        if (p.date < inv.date)
+          fail("Refund date cannot precede the invoice date");
+        if (credit && p.date < credit.date)
           fail("Refund date cannot precede the credit note date");
-        if (paise(p.amount) > paidFor(inv.id))
+        if (lastReturn && p.date < lastReturn)
+          fail("Refund date cannot precede the return date");
+        const refundable = refundDueFor(inv);
+        if (refundable <= 0)
+          fail(
+            credit || lastReturn
+              ? "There is no refundable amount left on this invoice"
+              : "Record a return or credit note before recording a refund",
+          );
+        if (paise(p.amount) > refundable)
           fail("Refund exceeds the refundable amount");
         recordPayment(inv.id, null, p, "refund");
       })();
@@ -539,6 +569,31 @@ export async function createApp() {
       else res.end();
     }
   });
+  app.post("/api/returns", (req, res, next) => {
+    try {
+      res.json({ id: db.transaction(() => saveReturn(req.body))() });
+    } catch (e) {
+      next(e);
+    }
+  });
+  app.get("/api/returns/:id/pdf", async (req, res, next) => {
+    try {
+      const state = buildState(),
+        ret = state.returns.find((entry) => entry.id === req.params.id);
+      if (!ret) fail("Return not found", 404);
+      const inv = state.invoices.find((entry) => entry.id === ret.invoice_id);
+      if (!inv) fail("Invoice not found", 404);
+      res.type("application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${ret.number.replaceAll("/", "-")}.pdf"`,
+      );
+      await returnPDF(res, ret, inv, { settings: state.settings });
+    } catch (e) {
+      if (!res.headersSent) next(e);
+      else res.end();
+    }
+  });
   app.post("/api/purchases", (req, res, next) => {
     try {
       res.json({ id: db.transaction(() => savePurchase(req.body))() });
@@ -570,7 +625,7 @@ export async function createApp() {
     );
     res.json({
       format: "shop-desk-backup",
-      version: 1,
+      version: BACKUP_VERSION,
       exported_at: now(),
       settings: getMeta("settings"),
       tables: Object.fromEntries(BACKUP_TABLES.map((t) => [t, all(t)])),
@@ -584,22 +639,25 @@ export async function createApp() {
       if (
         !backup ||
         backup.format !== "shop-desk-backup" ||
-        backup.version !== 1 ||
+        ![1, BACKUP_VERSION].includes(backup.version) ||
         !backup.tables
       )
         fail("This is not a supported shop desk backup");
       const settings = parse(settingsSchema, backup.settings);
+      // Version 1 backups predate customer returns. They are still restorable;
+      // their return tables are treated as empty.
+      const tables = {};
       for (const table of BACKUP_TABLES) {
-        if (
-          !Array.isArray(backup.tables[table]) ||
-          backup.tables[table].length > 100000
-        )
+        const rows =
+          backup.tables[table] ??
+          (backup.version === 1 ? [] : undefined);
+        if (!Array.isArray(rows) || rows.length > 100000)
           fail(`Invalid backup table: ${table}`);
         const keys = db
           .prepare(`PRAGMA table_info(${table})`)
           .all()
           .map((c) => c.name);
-        for (const row of backup.tables[table]) {
+        for (const row of rows) {
           if (
             !row ||
             Object.keys(row).length !== keys.length ||
@@ -607,18 +665,19 @@ export async function createApp() {
           )
             fail(`Invalid record in ${table}`);
         }
+        tables[table] = rows;
       }
-      for (const p of backup.tables.products)
+      for (const p of tables.products)
         parse(productSchema, {
           ...p,
           active: !!p.active,
           sale_price: p.sale_price / 100,
           cost_price: p.cost_price / 100,
         });
-      for (const c of backup.tables.clients) parse(clientSchema, c);
-      for (const s of backup.tables.suppliers) parse(supplierSchema, s);
-      for (const p of backup.tables.pets) parse(petSchema, p);
-      for (const inv of backup.tables.invoices) {
+      for (const c of tables.clients) parse(clientSchema, c);
+      for (const s of tables.suppliers) parse(supplierSchema, s);
+      for (const p of tables.pets) parse(petSchema, p);
+      for (const inv of tables.invoices) {
         if (
           !Array.isArray(JSON.parse(inv.lines)) ||
           !["draft", "issued", "credited"].includes(inv.status) ||
@@ -631,10 +690,38 @@ export async function createApp() {
             fail("Invalid document snapshot");
         }
       }
+      for (const ret of tables.returns) {
+        if (
+          typeof ret.number !== "string" ||
+          !ret.number ||
+          typeof ret.invoice_id !== "string" ||
+          !/^\d{4}-\d{2}-\d{2}$/.test(ret.date || "") ||
+          !Number.isSafeInteger(ret.total) ||
+          ret.total < 0
+        )
+          fail("Invalid return in backup");
+      }
+      for (const line of tables.return_lines) {
+        if (
+          !["resellable", "damaged", "expired", "service"].includes(
+            line.condition,
+          ) ||
+          !(line.qty > 0) ||
+          typeof line.return_id !== "string"
+        )
+          fail("Invalid return line in backup");
+      }
+      for (const allocation of tables.return_allocations) {
+        if (
+          typeof allocation.allocation_id !== "string" ||
+          !(allocation.qty > 0)
+        )
+          fail("Invalid return allocation in backup");
+      }
       db.transaction(() => {
         for (const t of DELETE_ORDER) db.prepare(`DELETE FROM ${t}`).run();
         for (const t of BACKUP_TABLES)
-          for (const row of backup.tables[t]) insert(t, row);
+          for (const row of tables[t]) insert(t, row);
         setMeta("settings", settings);
         setMeta("backup_at", backup.exported_at || null);
         const check = db.pragma("foreign_key_check");
@@ -784,6 +871,39 @@ export async function createApp() {
             p.amount / 100,
             p.method,
             p.reference,
+          ]),
+        ];
+      else if (req.params.type === "returns")
+        rows = [
+          [
+            "Return number",
+            "Date",
+            "Invoice",
+            "Client",
+            "Reason",
+            "Item lines",
+            "Restocked quantity",
+            "Supply value",
+            "CGST",
+            "SGST/UTGST",
+            "IGST",
+            "Total returned",
+            "Refund due at return",
+          ],
+          ...state.returns.map((ret) => [
+            ret.number,
+            ret.date,
+            ret.invoice_number,
+            ret.client_name || "Walk-in",
+            ret.reason,
+            ret.lines.length,
+            ret.restocked_qty,
+            ret.taxable / 100,
+            ret.cgst / 100,
+            ret.sgst / 100,
+            ret.igst / 100,
+            ret.total / 100,
+            ret.refund_due / 100,
           ]),
         ];
       else fail("Export not found", 404);

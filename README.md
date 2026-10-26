@@ -4,7 +4,17 @@
 
 A clean, responsive, single-clinic web application with a real Express API and a persistent SQLite database. The application starts with **no products, clients, patients, suppliers, purchases, invoices, payments, or transactions**. The only built-in lists are system references: states, units, categories, payment methods, and an HSN/SAC lookup. There is no demo-data loader.
 
-## Latest update: equal GST splits and a clearer UI
+## Latest update: customer returns, handled properly
+
+- **Customer returns** can now be recorded against any issued invoice, for **some or all** of each line. Every returned line records its condition: **resellable** goods go back to the exact batches they were sold from, while **damaged** and **expired** goods are documented but deliberately kept out of stock. Services can be returned without any stock movement.
+- A return creates its own **Return Note** (`RN/YY-YY/00001`). It is not a credit note. It has an A4 print view, an A4 PDF, and its own CSV export, and it appears in the sales register and item/GST reporting as a negative supply.
+- The return reduces what the customer owes on the invoice. If the customer has already paid more than the value of the goods they kept, the difference becomes a **refund due**; the actual refund is recorded separately when the money is paid. Overpaying a returned invoice is blocked.
+- An invoice with recorded returns cannot also be credited in full, which prevents stock being restored twice. Return the remaining items instead.
+- The new **Customer returns** page lists every return, how much went back to stock, and any refund still due. Open an issued invoice and choose **Return items** to start from the original document.
+- Full backups are now version 2 and include return records. Version 1 backups still restore, with their return tables treated as empty.
+- **Updating an existing installation?** Follow `RETURNS-UPDATE.txt`. No new dependencies are required; merge the supplied files and restart.
+
+## Earlier update: equal GST splits and a clearer UI
 
 - New and re-saved intrastate bills use **identical rounded CGST and SGST/UTGST amounts**, in the actual calculation, saved invoice, reports, A4 and thermal output—not a display-only correction.
 - Each half-rate component is rounded to paise; total tax is their sum. For **₹1,499 before 5% GST**, each component is **₹37.48**, total GST is **₹74.96**, and the amount is **₹1,573.96** before optional **₹0.04** rounding to **₹1,574.00**.
@@ -23,7 +33,8 @@ A clean, responsive, single-clinic web application with a real Express API and a
 4. Add clients and their pets, if needed. Walk-in billing is also supported.
 5. Create an invoice. **Save draft** does not change stock; **Issue invoice** deducts stock and assigns a financial-year invoice number.
 6. Record payments you have actually received and download or print the invoice.
-7. Download a full backup regularly from **Settings → Data & security**.
+7. If a customer brings something back, open the issued invoice and choose **Return items**, or use **Customer returns** in the menu. Record the condition of each item, then record any refund separately once it is actually paid.
+8. Download a full backup regularly from **Settings → Data & security**.
 
 All prices use INR. Enter catalogue prices **before GST**. GST is charged only when the clinic is configured as registered and the line item is taxable. Each item's tax treatment and rate must be explicitly confirmed; picking an HSN/SAC code does not silently set a rate.
 
@@ -99,6 +110,16 @@ Put HTTPS and access controls in front of the container if it is reachable over 
 - A4 invoice and credit-note PDFs, an HTML print view, amounts in words, terms, registration references, and bank/UPI instructions.
 - Optional UPI payment QR in an issued invoice PDF with a balance. The QR is an instruction to pay; receipt is not automatically verified.
 
+### Customer returns
+- Partial or full returns against an issued invoice, line by line.
+- Per-line condition: **resellable**, **damaged**, or **expired**.
+- Resellable goods return to the exact original batch and appear in stock history as a `return` movement. Damaged and expired goods are recorded but never re-enter stock.
+- Return values are prorated from the saved invoice line amounts, including discount and the original CGST/SGST/IGST split. Returning a line in several parts always adds back to exactly the billed amount.
+- A separate financial-year Return Note number (`RN/YY-YY/00001`), A4 print view, A4 PDF, CSV export and report register.
+- The invoice balance falls by the returned value; any excess already paid becomes a refund due on the invoice. Refunds are recorded separately and cannot exceed the refundable amount.
+- Invoices with recorded returns cannot take a full credit note, avoiding duplicate batch restoration. Fully return the remaining lines instead.
+- Returns are immutable audit records. Correct mistakes with a new sale or invoice rather than editing a saved return.
+
 ### POS bills, thermal receipts, and invoice templates
 
 Billing is included, not just document creation. **Billing & invoices → New POS bill** opens a counter-sale flow: search by name/SKU or use a keyboard-style barcode scanner, select an actual payment status/method, then **Issue bill**. It uses the same invoice numbering, stock allocation and payment records as normal invoicing. Printing is a separate action after a successful issue; it does not issue or charge again.
@@ -155,9 +176,9 @@ This is a **single-clinic, single-owner** inventory and domestic regular-taxpaye
 
 - **Not connected:** GST return filing, IRN/e-invoice submission, e-way bills, payment gateways, bank reconciliation, SMS, WhatsApp, and email delivery.
 - Payment actions are bookkeeping records only. No funds are charged, transferred, or refunded automatically.
-- Full credit-note reversals are supported. Partial credit notes and partial return/refund workflows are not implemented; fully reverse and rebill where appropriate, with accounting guidance.
+- Full credit-note reversals are supported. Partial **customer returns** are supported line by line, with optional restocking and separately recorded refunds. Partial credit notes themselves are not issued: use a return note instead. Exchanges are handled as a return plus a new invoice.
 - Composition-scheme, export/SEZ, reverse-charge, cess, and multi-branch/multi-user-role workflows are not implemented.
-- Posted purchases are immutable receipts. Inventory corrections/returns are handled by stock adjustments; supplier debit notes and purchase-return accounting are not implemented.
+- Posted purchases are immutable receipts. Inventory corrections are handled by stock adjustments. **Customer** returns are supported; supplier returns, debit notes and purchase-return accounting are not implemented.
 - No automatic cloud backup, sync, prescribed data-retention policy, or audited production security/compliance certification is provided.
 - The host/database is the system of record. Backups contain personal and financial information and must be secured.
 
@@ -165,7 +186,7 @@ Have an accountant review your invoice format, tax settings, and any statutory r
 
 ## Backup and recovery
 
-Use **Settings → Data & security → Download full backup** for a consistent JSON export. A restore replaces all business data after validating the backup and checking the current owner password. It is atomic: if any reference is invalid, the existing workspace is retained.
+Use **Settings → Data & security → Download full backup** for a consistent JSON export. A restore replaces all business data after validating the backup and checking the current owner password. It is atomic: if any reference is invalid, the existing workspace is retained. Backups are version 2 and include returns; version 1 backups from earlier releases still restore, with no returns.
 
 For file-level backups, stop the application before copying the SQLite database, or use SQLite's backup API. Do not copy only the main `.sqlite` file while WAL writes may still be active.
 
@@ -183,7 +204,7 @@ This is an interactive, local-only recovery command. It does not expose a web pa
 npm test
 ```
 
-The automated workflow/tax suite covers empty installation, auth, validation, atomic imports, drafts, invoice numbering, GST arithmetic, concurrent overselling prevention, batch allocation, expiry protection, purchase receiving, payments, refunds, credit notes, immutable snapshots, PDFs, backup/restore, and session revocation. **37 tests passed** in the supplied workspace, including print defaults, HTML escaping, invoice/receipt consistency, credit/draft status, UPI eligibility, all three A4 templates, true thermal paper dimensions, long-bill pagination, settings validation and transaction-free reprinting. Regression tests cover the reported ₹1,499 odd-paise case, inclusive pricing, fractional quantities/discounts across common rates, equal HSN-group sums, actual saved payments, and unchanged historical issued snapshots.
+The automated workflow/tax suite covers empty installation, auth, validation, atomic imports, drafts, invoice numbering, GST arithmetic, concurrent overselling prevention, batch allocation, expiry protection, purchase receiving, payments, refunds, credit notes, customer returns, immutable snapshots, PDFs, backup/restore, and session revocation. **51 tests passed** in the supplied workspace, including print defaults, HTML escaping, invoice/receipt consistency, credit/draft status, UPI eligibility, all three A4 templates, true thermal paper dimensions, long-bill pagination, settings validation and transaction-free reprinting. Returns tests cover partial, split and fractional-quantity returns, exact paise proration, round-off reversal, resellable/damaged/expired handling, duplicate-line and over-return rejection, blocked credit notes, invoice balance versus refund due, refund limits, return-note PDFs and CSV export, and version 1/2 backup compatibility. Regression tests cover the reported ₹1,499 odd-paise case, inclusive pricing, fractional quantities/discounts across common rates, equal HSN-group sums, actual saved payments, and unchanged historical issued snapshots.
 
 For browser tests:
 

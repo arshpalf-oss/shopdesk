@@ -250,26 +250,36 @@ export function Badge({ children, tone = "neutral", dot = false }) {
   );
 }
 export function InvoiceBadge({ invoice }) {
-  return invoice.status === "draft" ? (
-    <Badge>Draft</Badge>
-  ) : invoice.status === "credited" ? (
-    <Badge tone="purple">Credited</Badge>
-  ) : invoice.balance === 0 ? (
-    <Badge tone="green" dot>
-      Paid
-    </Badge>
-  ) : invoice.paid > 0 ? (
-    <Badge tone="amber" dot>
-      Part paid
-    </Badge>
-  ) : invoice.due_date < today() ? (
-    <Badge tone="red" dot>
-      Overdue
-    </Badge>
-  ) : (
-    <Badge tone="amber" dot>
-      Unpaid
-    </Badge>
+  const payment =
+    invoice.status === "draft" ? (
+      <Badge>Draft</Badge>
+    ) : invoice.status === "credited" ? (
+      <Badge tone="purple">Credited</Badge>
+    ) : invoice.balance === 0 ? (
+      <Badge tone="green" dot>
+        Paid
+      </Badge>
+    ) : invoice.paid > 0 ? (
+      <Badge tone="amber" dot>
+        Part paid
+      </Badge>
+    ) : invoice.due_date < today() ? (
+      <Badge tone="red" dot>
+        Overdue
+      </Badge>
+    ) : (
+      <Badge tone="amber" dot>
+        Unpaid
+      </Badge>
+    );
+  if (!invoice.returned_total) return payment;
+  return (
+    <span className="badge-stack">
+      {payment}
+      <Badge tone="purple">
+        {invoice.fully_returned ? "Returned" : "Part returned"}
+      </Badge>
+    </span>
   );
 }
 export function PageHeader({ eyebrow, title, description, actions }) {

@@ -1,4 +1,9 @@
-import { money, stateName, amountWords } from "./shared.js";
+import {
+  money,
+  stateName,
+  amountWords,
+  RETURN_CONDITION_LABELS,
+} from "./shared.js";
 
 // Layout preferences are separate from the immutable details on issued invoices.
 export const PRINT_DEFAULTS = {
@@ -122,6 +127,9 @@ export function totalRows(inv, credit = null) {
   if (inv.rounding) rows.push(["Round off", inv.rounding]);
   rows.push([credit ? "Credit total" : "Grand total", inv.total, "total"]);
   if (!credit && inv.status !== "draft") {
+    // A partial return is a separate document. Showing the reconciliation
+    // keeps the printed balance explainable without changing the sale figures.
+    if (inv.returned_total) rows.push(["Returns recorded", -inv.returned_total]);
     rows.push(["Net payment received", inv.paid || 0]);
     rows.push([
       inv.status === "credited" ? "Refund due" : "Balance due",
@@ -406,4 +414,78 @@ export function renderDocumentHTML(inv, options = {}) {
     @media print{body{padding:0!important}.print-toolbar{display:none!important}.a4-document{padding:0;max-width:none;min-width:0}.receipt{margin:0;width:${Number(width) - 6}mm}a{color:inherit;text-decoration:none}}
   `;
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${e(d.title + " " + d.number)}</title><style>${css}</style></head><body data-format="${format}" data-width="${width}" data-template="${template}" class="template-${template}">${toolbar}${format === "thermal" ? receiptBody(inv, opts) : a4Body(inv, opts)}</body></html>`;
+}
+
+// Printable customer-return note. It shares the monochrome document language
+// with invoices, but it is explicitly not a tax invoice or a credit note.
+export function renderReturnHTML(ret, inv, options = {}) {
+  const c = inv.clinic || {},
+    e = escapeHTML,
+    condition = (line) => {
+      if (line.type === "service") return "Service · no physical stock";
+      if (line.condition === "resellable") return "Resellable · returned to stock";
+      if (line.condition === "damaged") return "Damaged · not restocked";
+      if (line.condition === "expired") return "Expired · not restocked";
+      return RETURN_CONDITION_LABELS[line.condition] || line.condition;
+    };
+  const restocked = ret.lines
+    .filter((line) => line.type !== "service" && line.condition === "resellable")
+    .reduce((n, line) => n + line.qty, 0);
+  const withheld = ret.lines
+    .filter((line) => line.type !== "service" && line.condition !== "resellable")
+    .reduce((n, line) => n + line.qty, 0);
+  const toolbar = options.controls
+    ? '<aside class="print-toolbar"><button id="print-document" type="button">Print</button><span>A4 · 100% scale · Browser headers/footers off.</span></aside>'
+    : "";
+  const rows = ret.lines
+    .map(
+      (line, index) => `<tr>
+        <td>${index + 1}</td>
+        <td><strong>${e(line.name)}</strong><small>${e(line.hsn)} · ${e(condition(line))}</small></td>
+        <td class="num">${e(line.qty)} ${e(line.unit)}</td>
+        <td class="num">${e(money(line.rate))}</td>
+        <td class="num">${e(money(line.taxable))}</td>
+        <td class="num">${e(money(line.tax))}</td>
+        <td class="num"><strong>${e(money(line.total))}</strong></td>
+      </tr>`,
+    )
+    .join("");
+  const totalRows = [["Supply value", ret.taxable]];
+  if (ret.discount) totalRows.push(["Discount (included)", -ret.discount]);
+  if (ret.cgst || ret.sgst)
+    totalRows.push(["CGST", ret.cgst], ["SGST / UTGST", ret.sgst]);
+  if (ret.igst) totalRows.push(["IGST", ret.igst]);
+  if (ret.rounding) totalRows.push(["Round off", ret.rounding]);
+  const totals = totalRows
+    .map(
+      ([label, value]) =>
+        `<div><dt>${e(label)}</dt><dd>${e(money(value))}</dd></div>`,
+    )
+    .join("");
+  const css = `
+    *{box-sizing:border-box}html{background:#fff}body{margin:0;color:#111;background:#fff;font:11px/1.42 Arial,Helvetica,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}h1,h2,h3,p,dl,dd,figure{margin:0}p{white-space:normal;overflow-wrap:anywhere}h1{font-size:22px;line-height:1.2;font-weight:700}h2{font-size:15px;line-height:1.35;font-weight:700;letter-spacing:.4px}h3{font-size:9px;font-weight:700;letter-spacing:.5px;margin:0 0 7px}.small{font-size:9px}.num{text-align:right;font-variant-numeric:tabular-nums}.a4-document{max-width:190mm;margin:0 auto;padding:12px}.doc-head{display:flex;justify-content:space-between;gap:25px;padding-bottom:15px;border-bottom:1.5px solid #111}.doc-seller{flex:1;min-width:0}.doc-seller p{margin-top:5px;font-size:10px;line-height:1.4}.doc-meta{width:235px;flex-shrink:0;text-align:right}.doc-meta h2{margin-bottom:12px}.doc-meta dl>div{display:flex;justify-content:space-between;gap:12px;margin-top:4px}.doc-meta dt{color:#444;text-align:left}.doc-meta dd{font-weight:600;overflow-wrap:anywhere}.parties{display:grid;grid-template-columns:1fr 1fr;gap:28px;padding:15px 0}.parties p{margin-top:4px;line-height:1.45}.items{width:100%;border-collapse:collapse}.items th{font-size:9px;text-align:left;padding:7px 6px;border-bottom:1px solid #555;border-top:1px solid #555;background:#f4f4f4}.items th.num{text-align:right}.items td{padding:8px 6px;border-bottom:1px solid #ccc;vertical-align:top;overflow-wrap:anywhere}.items td:first-child{width:22px}.items td:nth-child(2){width:43%}.items td:nth-child(n+3){white-space:nowrap}.items small{display:block;font-size:9px;line-height:1.4;margin-top:3px;color:#333}.summary{display:grid;grid-template-columns:1fr 265px;gap:25px;margin-top:17px}.goods{font-size:10px;line-height:1.5}.goods h3{margin-top:13px;margin-bottom:4px}.goods p+p{margin-top:5px}.totals>div{display:flex;justify-content:space-between;gap:15px;padding:4px 0}.totals dd{font-variant-numeric:tabular-nums;white-space:nowrap}.totals .total{font-size:14px;font-weight:700;border-top:1.5px solid #111;border-bottom:1px solid #111;padding:7px 0;margin:4px 0}.status-notice{border:1px solid #333;padding:7px;margin-top:10px;font-weight:bold}.signatures{display:grid;grid-template-columns:1fr 1fr;gap:48px;margin-top:40px;font-size:10px}.signatures>div{padding-top:26px;border-top:1px solid #777}.signatures span{display:block;color:#444;margin-top:3px}.return-footer{display:flex;justify-content:space-between;gap:20px;border-top:1px solid #aaa;padding-top:10px;margin-top:28px;font-size:9px}.print-toolbar{font:12px Arial,sans-serif;background:#eee;color:#222;padding:12px;margin-bottom:18px;display:flex;align-items:center;justify-content:center;gap:15px}.print-toolbar button{border:1px solid #777;background:#fff;color:#111;padding:7px 20px;border-radius:3px;cursor:pointer}thead{display:table-header-group}tr,.signatures,.return-footer{break-inside:avoid}@page{size:A4;margin:12mm}@media screen{body{padding:10px 0}.a4-document{min-width:575px}}@media print{body{padding:0!important}.print-toolbar{display:none!important}.a4-document{padding:0;max-width:none;min-width:0}}
+  `;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${e(`Return note ${ret.number}`)}</title><style>${css}</style></head><body>${toolbar}<article class="a4-document" aria-label="Customer return note">
+    <header class="doc-head">
+      <div class="doc-seller"><h1>${e(c.name || "")}</h1><p>${e([c.address, [c.city, stateName(c.state)].filter(Boolean).join(", "), [c.phone, c.email].filter(Boolean).join(" · "), c.gst_registered ? `GSTIN: ${c.gstin}` : ""].filter(Boolean).join("\n")).replaceAll("\n", "<br>")}</p></div>
+      <div class="doc-meta"><h2>RETURN NOTE</h2><dl>
+        <div><dt>Number</dt><dd>${e(ret.number)}</dd></div>
+        <div><dt>Date</dt><dd>${e(printDate(ret.date))}</dd></div>
+        <div><dt>Original invoice</dt><dd>${e(inv.number || "")}</dd></div>
+        <div><dt>Invoice date</dt><dd>${e(printDate(inv.date))}</dd></div>
+      </dl></div>
+    </header>
+    <section class="parties">
+      <div><h3>RETURNED BY</h3><strong>${e(inv.customer.name || "Walk-in client")}</strong><p>${e([inv.customer.address, inv.customer.state ? stateName(inv.customer.state) : "", inv.customer.phone, inv.customer.gstin ? `GSTIN: ${inv.customer.gstin}` : ""].filter(Boolean).join("\n")).replaceAll("\n", "<br>")}</p></div>
+      <div><h3>RETURN DETAILS</h3><p>${e([inv.pet.name ? `Patient: ${inv.pet.name} · ${inv.pet.species}` : "", `Reason: ${ret.reason}`, `Original invoice total: ${money(inv.total)}`].filter(Boolean).join("\n")).replaceAll("\n", "<br>")}</p></div>
+    </section>
+    <table class="items"><thead><tr><th>#</th><th>ITEM · HSN · CONDITION</th><th class="num">QTY</th><th class="num">RATE</th><th class="num">TAXABLE</th><th class="num">GST</th><th class="num">TOTAL</th></tr></thead><tbody>${rows}</tbody></table>
+    <section class="summary">
+      <div class="goods"><h3>GOODS RECEIVED</h3><p>${e(`${ret.lines.reduce((n, line) => n + line.qty, 0)} unit(s) recorded on this return.`)}</p>${restocked ? `<p>${e(`${restocked} unit(s) returned to the original batch and available again.`)}</p>` : ""}${withheld ? `<p>${e(`${withheld} unit(s) damaged or expired and deliberately not restocked.`)}</p>` : ""}<h3>REFUND</h3><p>${e(`Refund due against this invoice as at the return: ${money(ret.refund_due)}. Any refund is recorded separately after the money is actually paid.`)}</p>${ret.notes ? `<h3>NOTES</h3><p>${e(ret.notes).replaceAll("\n", "<br>")}</p>` : ""}</div>
+      <div class="totals"><dl>${totals}<div class="total"><dt>Total returned</dt><dd>${e(money(ret.total))}</dd></div></dl></div>
+    </section>
+    <div class="status-notice">This is a record of goods returned. It is not a tax invoice or a credit note.</div>
+    <section class="signatures"><div>Goods received by (clinic)<span>Name, signature and date</span></div><div>Customer / representative<span>Name, signature and date</span></div></section>
+    <footer class="return-footer"><span>Record of goods returned against ${e(inv.number || "")}</span><span>Any refund is recorded separately · shop desk</span></footer>
+  </article></body></html>`;
 }

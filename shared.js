@@ -374,3 +374,55 @@ export function amountWords(p) {
     " Only"
   );
 }
+
+// A customer return can cover part of an invoice line. Each money component is
+// prorated by cumulative returned quantity, so returning a line in several
+// parts always adds back to exactly the amount that was billed.
+export const RETURN_CONDITIONS = [
+  {
+    value: "resellable",
+    label: "Resellable",
+    description: "Return to the original batch and available stock",
+  },
+  {
+    value: "damaged",
+    label: "Damaged",
+    description: "Record the return, but do not put it back in stock",
+  },
+  {
+    value: "expired",
+    label: "Expired",
+    description: "Record the return, but do not put it back in stock",
+  },
+];
+export const RETURN_CONDITION_LABELS = {
+  resellable: "Resellable",
+  damaged: "Damaged",
+  expired: "Expired",
+  service: "Service",
+};
+const RETURN_AMOUNT_FIELDS = [
+  "gross",
+  "discount_amount",
+  "taxable",
+  "cgst",
+  "sgst",
+  "igst",
+  "tax",
+  "total",
+];
+export function returnLineAmounts(line, returnedQty = 0, qty = 0) {
+  const sold = quantity(line.qty);
+  const before = Math.min(quantity(returnedQty), sold);
+  const taken = Math.min(quantity(qty), quantity(sold - before));
+  const after = quantity(before + taken);
+  const share = (field) => {
+    const value = Number(line[field] || 0);
+    if (!sold) return 0;
+    return Math.round(value * (after / sold)) - Math.round(value * (before / sold));
+  };
+  return {
+    qty: quantity(after - before),
+    ...Object.fromEntries(RETURN_AMOUNT_FIELDS.map((f) => [f, share(f)])),
+  };
+}

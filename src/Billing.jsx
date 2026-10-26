@@ -74,6 +74,7 @@ export function Billing() {
       (tab === "all" ||
         (tab === "draft" && i.status === "draft") ||
         (tab === "credited" && i.status === "credited") ||
+        (tab === "returned" && i.returned_count > 0) ||
         (tab === "unpaid" && i.balance > 0) ||
         (tab === "paid" && i.status === "issued" && i.balance === 0)),
   );
@@ -110,7 +111,8 @@ export function Billing() {
                 state.invoices
                   .filter((i) => i.status !== "draft")
                   .reduce((n, i) => n + i.total, 0) -
-                  state.credits.reduce((n, c) => n + c.total, 0),
+                  state.credits.reduce((n, c) => n + c.total, 0) -
+                  state.returns.reduce((n, r) => n + r.total, 0),
               )}
             </strong>
           </div>
@@ -151,6 +153,7 @@ export function Billing() {
               { value: "unpaid", label: "Unpaid" },
               { value: "paid", label: "Paid" },
               { value: "draft", label: "Drafts" },
+              { value: "returned", label: "Returned" },
               { value: "credited", label: "Credited" },
             ]}
             value={tab}
@@ -236,7 +239,7 @@ export function Billing() {
                 <Money value={i.total} />
               </td>
               <td>
-                {i.status === "credited" && i.refund_due > 0 ? (
+                {i.refund_due > 0 ? (
                   <>
                     <Money className="text-amber" value={i.refund_due} />
                     <span className="table-secondary">Refund due</span>
@@ -263,7 +266,7 @@ export function Billing() {
         </Table>
         <div className="table-footer">
           <span>
-            Issued invoices are locked. Use a credit note for reversals.
+            Issued invoices are locked. Use a return or credit note for reversals.
           </span>
           <span>
             <ShieldCheck size={13} /> Consecutive financial-year numbering
@@ -912,11 +915,16 @@ export function InvoiceView({ id, initialFormat }) {
         <>
           <div className="invoice-footer-status">
             <InvoiceBadge invoice={inv} />
-            {inv.status === "issued" && (
-              <span>
-                Balance <Money value={inv.balance} />
-              </span>
-            )}
+            {inv.status === "issued" &&
+              (inv.refund_due > 0 ? (
+                <span>
+                  Refund due <Money value={inv.refund_due} />
+                </span>
+              ) : (
+                <span>
+                  Balance <Money value={inv.balance} />
+                </span>
+              ))}
           </div>
           <Button variant="secondary" onClick={close}>
             Close
@@ -948,25 +956,40 @@ export function InvoiceView({ id, initialFormat }) {
                 Edit / issue draft
               </Button>
             </>
-          ) : inv.status === "issued" && inv.balance > 0 ? (
-            <Button icon={Plus} onClick={() => open("payment", { id })}>
-              Record payment
-            </Button>
-          ) : inv.status === "credited" && inv.refund_due > 0 ? (
-            <Button
-              icon={Undo2}
-              onClick={() => open("payment", { id, refund: true })}
-            >
-              Record refund
-            </Button>
-          ) : null}
+          ) : (
+            <>
+              {inv.status === "issued" && !inv.fully_returned && (
+                <Button
+                  variant="secondary"
+                  icon={Undo2}
+                  onClick={() => open("return", { invoiceId: id })}
+                >
+                  Return items
+                </Button>
+              )}
+              {inv.status === "issued" && inv.balance > 0 && (
+                <Button icon={Plus} onClick={() => open("payment", { id })}>
+                  Record payment
+                </Button>
+              )}
+              {(inv.status === "credited" ||
+                (inv.status === "issued" && inv.refund_due > 0)) && (
+                <Button
+                  icon={Undo2}
+                  onClick={() => open("payment", { id, refund: true })}
+                >
+                  Record refund
+                </Button>
+              )}
+            </>
+          )}
         </>
       }
     >
       <div className="document-actions">
         <div>
           <InvoiceBadge invoice={inv} />
-          {inv.status === "issued" && (
+          {inv.status === "issued" && !inv.returned_total && (
             <button
               className="text-button muted"
               onClick={() => open("credit", { id })}
@@ -974,6 +997,11 @@ export function InvoiceView({ id, initialFormat }) {
               <Undo2 size={14} />
               Create credit note
             </button>
+          )}
+          {inv.status === "issued" && inv.returned_total > 0 && (
+            <span className="tiny muted">
+              Full credit note unavailable after a return
+            </span>
           )}
         </div>
         <div>
@@ -1074,6 +1102,49 @@ export function InvoiceView({ id, initialFormat }) {
           </Button>
         </div>
       )}
+      {inv.returns?.length > 0 && (
+        <div className="invoice-returns">
+          <div className="payment-history-heading">
+            <h3>Customer returns</h3>
+            <span>
+              {inv.returns.length}{" "}
+              {inv.returns.length === 1 ? "return note" : "return notes"} ·{" "}
+              {money(inv.returned_total)}
+            </span>
+          </div>
+          <Table head={["RETURN", "DATE", "REASON", "VALUE", "STOCK"]}>
+            {inv.returns.map((ret) => (
+              <tr
+                key={ret.id}
+                className="clickable"
+                onClick={() => open("returnView", { id: ret.id })}
+              >
+                <td>
+                  <strong className="table-primary">{ret.number}</strong>
+                </td>
+                <td>{fmtDate(ret.date)}</td>
+                <td>{ret.reason}</td>
+                <td>
+                  <Money value={ret.total} />
+                </td>
+                <td>
+                  {ret.restocked_qty > 0
+                    ? `${ret.restocked_qty} restocked`
+                    : "Not restocked"}
+                </td>
+              </tr>
+            ))}
+          </Table>
+          <p className="return-ledger-note">
+            {inv.fully_returned
+              ? "Every item on this invoice has been returned."
+              : `${money(inv.total - inv.returned_total)} of the invoice remains with the customer.`}
+            {inv.refund_due > 0
+              ? ` Refund due: ${money(inv.refund_due)}. Record it after paying.`
+              : ""}
+          </p>
+        </div>
+      )}
       <ErrorBox>{task.error}</ErrorBox>
       <DocumentPreview
         invoice={inv}
@@ -1126,6 +1197,18 @@ export function PaymentForm({ id, purchase = false, refund = false }) {
       : refund
         ? record.refund_due
         : record.balance;
+  const refundFloor = refund
+    ? [
+        record.date,
+        record.credit?.date,
+        ...state.returns
+          .filter((entry) => entry.invoice_id === id)
+          .map((entry) => entry.date),
+      ]
+        .filter(Boolean)
+        .sort()
+        .pop()
+    : record.date;
   const [form, setForm, field] = useForm({
       amount: (balance / 100).toFixed(2),
       method: purchase ? "Bank transfer" : "Cash",
@@ -1207,7 +1290,7 @@ export function PaymentForm({ id, purchase = false, refund = false }) {
             <input
               type="date"
               {...field("date")}
-              min={refund ? record.credit.date : record.date}
+              min={refundFloor}
               max={today()}
               required
             />

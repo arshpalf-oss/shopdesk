@@ -50,12 +50,15 @@ export default function Reports() {
     (p) => p.invoice_id && inRange(p.date),
   );
   const purchases = state.purchases.filter((p) => inRange(p.date));
+  const returns = state.returns.filter((ret) => inRange(ret.date));
   const netSales =
     invoices.reduce((n, i) => n + i.taxable, 0) -
-    credits.reduce((n, c) => n + (c.invoice?.taxable || 0), 0);
+    credits.reduce((n, c) => n + (c.invoice?.taxable || 0), 0) -
+    returns.reduce((n, ret) => n + ret.taxable, 0);
   const tax =
     invoices.reduce((n, i) => n + i.tax, 0) -
-    credits.reduce((n, c) => n + (c.invoice?.tax || 0), 0);
+    credits.reduce((n, c) => n + (c.invoice?.tax || 0), 0) -
+    returns.reduce((n, ret) => n + ret.tax, 0);
   const collections = payments.reduce(
     (n, p) => n + (p.direction === "refund" ? -p.amount : p.amount),
     0,
@@ -64,6 +67,9 @@ export default function Reports() {
     ...invoices.flatMap((i) => i.lines.map((l) => ({ ...l, sign: 1 }))),
     ...credits.flatMap((c) =>
       (c.invoice?.lines || []).map((l) => ({ ...l, sign: -1 })),
+    ),
+    ...returns.flatMap((ret) =>
+      ret.lines.map((l) => ({ ...l, sign: -1 })),
     ),
   ];
   const itemMap = {},
@@ -111,7 +117,7 @@ export default function Reports() {
       supply: i.taxable,
       tax: i.tax,
       total: i.total,
-      credit: false,
+      negative: false,
     })),
     ...credits.map((c) => ({
       id: c.invoice_id,
@@ -122,7 +128,19 @@ export default function Reports() {
       supply: -(c.invoice?.taxable || 0),
       tax: -(c.invoice?.tax || 0),
       total: -c.total,
-      credit: true,
+      negative: true,
+    })),
+    ...returns.map((ret) => ({
+      id: ret.invoice_id,
+      returnId: ret.id,
+      number: ret.number,
+      date: ret.date,
+      name: ret.client_name || "Walk-in client",
+      type: "Return Note",
+      supply: -ret.taxable,
+      tax: -ret.tax,
+      total: -ret.total,
+      negative: true,
     })),
   ].sort((a, b) => b.date.localeCompare(a.date));
   const exportReport = () => {
@@ -186,6 +204,31 @@ export default function Reports() {
           h.tax / 100,
         ]),
       ];
+    if (tab === "returns")
+      rows = [
+        [
+          "Date",
+          "Return number",
+          "Invoice",
+          "Client",
+          "Reason",
+          "Restocked qty",
+          "Supply value",
+          "GST",
+          "Total",
+        ],
+        ...returns.map((ret) => [
+          ret.date,
+          ret.number,
+          ret.invoice_number,
+          ret.client_name || "Walk-in",
+          ret.reason,
+          ret.restocked_qty,
+          ret.taxable / 100,
+          ret.tax / 100,
+          ret.total / 100,
+        ]),
+      ];
     if (tab === "payments")
       rows = [
         ["Date", "Invoice", "Client", "Type", "Method", "Reference", "Amount"],
@@ -241,6 +284,7 @@ export default function Reports() {
         [
           ...state.invoices.map((i) => i.date),
           ...state.credits.map((c) => c.date),
+          ...state.returns.map((r) => r.date),
           ...state.payments.map((p) => p.date),
           ...state.purchases.map((p) => p.date),
           today(),
@@ -307,13 +351,13 @@ export default function Reports() {
         <StatCard
           title="Net sales"
           value={money(netSales)}
-          note="Supply value less credits · excl. GST"
+          note="Supply value less returns and credits · excl. GST"
           icon={IndianRupee}
         />
         <StatCard
           title="Output GST"
           value={money(tax)}
-          note="Net of credit notes · before input credit"
+          note="Net of returns and credit notes · before input credit"
           icon={ReceiptText}
           tone="blue"
         />
@@ -341,6 +385,7 @@ export default function Reports() {
               { value: "sales", label: "Sales register" },
               { value: "items", label: "Item performance" },
               { value: "gst", label: "GST summary" },
+              { value: "returns", label: "Returns" },
               { value: "payments", label: "Payments" },
             ]}
           />
@@ -368,7 +413,11 @@ export default function Reports() {
               <tr
                 key={r.number}
                 className="clickable"
-                onClick={() => open("invoiceView", { id: r.id })}
+                onClick={() =>
+                  open(r.returnId ? "returnView" : "invoiceView", {
+                    id: r.returnId || r.id,
+                  })
+                }
               >
                 <td>
                   <strong className="table-primary">{r.number}</strong>
@@ -385,7 +434,7 @@ export default function Reports() {
                 <td>
                   <Money
                     value={r.total}
-                    className={r.credit ? "text-amber" : ""}
+                    className={r.negative ? "text-amber" : ""}
                   />
                 </td>
               </tr>
@@ -433,7 +482,8 @@ export default function Reports() {
         {tab === "gst" && (
           <>
             <div className="report-tax-note">
-              Supply-date register with credit notes on their issue dates.
+              Supply-date register with credit notes and customer returns on
+              their issue dates.
               Exempt, nil-rated and non-GST supplies are shown separately. This
               is not a GST filing or ITC eligibility report.
             </div>
@@ -481,6 +531,45 @@ export default function Reports() {
             </Table>
           </>
         )}
+        {tab === "returns" && (
+          <Table
+            head={[
+              "RETURN",
+              "DATE",
+              "INVOICE",
+              "CLIENT",
+              "REASON",
+              "RESTOCKED",
+              "TOTAL",
+            ]}
+            empty={
+              !returns.length && (
+                <ReportEmpty title="No customer returns in this period" />
+              )
+            }
+          >
+            {returns.map((ret) => (
+              <tr
+                key={ret.id}
+                className="clickable"
+                onClick={() => open("returnView", { id: ret.id })}
+              >
+                <td>
+                  <strong className="table-primary">{ret.number}</strong>
+                  <span className="table-secondary">Return note</span>
+                </td>
+                <td>{fmtDate(ret.date)}</td>
+                <td>{ret.invoice_number}</td>
+                <td>{ret.client_name || "Walk-in client"}</td>
+                <td>{ret.reason}</td>
+                <td>{ret.restocked_qty}</td>
+                <td>
+                  <Money value={ret.total} />
+                </td>
+              </tr>
+            ))}
+          </Table>
+        )}
         {tab === "payments" && (
           <Table
             head={["DATE", "INVOICE", "TYPE", "METHOD", "REFERENCE", "AMOUNT"]}
@@ -513,7 +602,9 @@ export default function Reports() {
           </Table>
         )}
         <div className="table-footer">
-          <span>All amounts in INR · Drafts are excluded</span>
+          <span>
+            All amounts in INR · Drafts are excluded · Returns are negative
+          </span>
           <span>
             <ShieldCheck size={13} /> Based only on your saved records
           </span>

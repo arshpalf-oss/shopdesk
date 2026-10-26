@@ -1,0 +1,95 @@
+SHOP DESK — CUSTOMER RETURNS UPDATE
+
+This update adds a complete customer-return workflow to shop desk.
+
+WHAT IS NEW
+
+- A "Customer returns" page in the left menu.
+- "Return items" on every issued invoice that still has returnable items.
+- Partial or full, line-by-line returns against an issued invoice.
+- Per-line condition: resellable, damaged, or expired.
+  - Resellable goods are restored to the exact batches they were sold from.
+  - Damaged and expired goods are recorded but never put back into stock.
+  - Services can be returned with no stock movement.
+- A separate Return Note number (RN/YY-YY/00001), A4 print view and A4 PDF.
+- Return values use the saved invoice amounts and GST split. Returning a line
+  in several parts always adds back to exactly the billed amount.
+- Invoice balances fall by the returned value. If the customer had already paid
+  more than the goods they kept are worth, the excess becomes a refund due.
+  Refunds are still recorded separately, after the money is actually paid.
+- Returns appear in Reports (sales register, item performance, GST summary and
+  a dedicated Returns tab) and in a new returns CSV export.
+- Full backups are now version 2 and include returns. Version 1 backups from
+  earlier releases still restore successfully, with no return records.
+
+WHAT IS DELIBERATELY UNCHANGED
+
+- Issued invoices keep their original number, lines, tax, payments and
+  snapshots. A return never rewrites the invoice.
+- Full credit notes still work as before for invoices with no returns. Once an
+  invoice has a return, a full credit note is refused to prevent restoring the
+  same stock twice.
+- Payments and refunds are bookkeeping records only. No money moves
+  automatically.
+- Supplier returns and debit notes are not part of this update.
+
+APPLY TO AN EXISTING INSTALLATION
+
+1. Download a backup from Settings > Data & security before updating.
+2. Stop the running shop desk server with Ctrl+C in its terminal.
+3. Copy the supplied project files into your EXISTING shop desk folder — the one
+   containing package.json. Merge folders and replace files when asked.
+   Include the whole src folder, server folder, shared.js, printing.js, README.md
+   and this file.
+4. If you use the production build, copy the supplied dist folder as well (it is
+   already built). If you build it yourself, run:
+
+   npm run build
+
+5. Start the application as usual:
+
+   npm start
+
+6. Hard-refresh the page (Ctrl+F5 on Windows/Linux, Command+Shift+R on macOS).
+
+No database reset or migration command is needed. On start, shop desk creates
+the new return tables alongside the existing data. Keep your data folder and any
+custom DB_PATH unchanged. There are no new dependencies.
+
+VERIFY THE UPDATE
+
+1. Open an issued invoice with at least one returnable item.
+2. Choose "Return items". Set a quantity, pick a condition, and record the
+   return with a reason.
+3. Open "Customer returns": the return note should be listed and a PDF should
+   download. The invoice should show the return and the adjusted balance.
+4. If the invoice was fully paid, "Record refund" should appear for the excess
+   amount. Recording a refund updates the payment history without moving money.
+5. Check Reports > Returns and Reports > Sales register; the return should
+   appear as a negative entry.
+6. Download a backup and confirm it restores.
+
+CHANGED FILES
+
+server/db.js            New returns, return_lines and return_allocations tables
+server/domain.js        Return validation, proration, restocking and refund math
+server/index.js         Return API, return PDF route, refund checks, backup v2
+server/pdf.js           A4 return-note PDF
+shared.js               Return conditions and exact return proration helper
+printing.js             Escaped HTML return-note print layout
+src/Returns.jsx         Returns page, return form and return document view
+src/App.jsx             Navigation, routing, workspace state and search
+src/Billing.jsx         Invoice shortcuts, returns panel and refund dates
+src/Overview.jsx        Net sales after returns and a return quick action
+src/Reports.jsx         Returns in registers, GST/items, export and a Returns tab
+src/ui.jsx              Invoice badge shows returned / part-returned state
+src/styles.css          Customer-returns styling
+tests/returns.test.js   Isolated returns workflow tests
+
+IMPORTANT
+
+- A return note is a goods-received document, not a tax invoice or a credit
+  note. Have your accountant review return/refund treatment for your clinic.
+- Backups from this version cannot be restored by an older shop desk release,
+  because older releases do not know the return tables. Keep the matching
+  application version with your data.

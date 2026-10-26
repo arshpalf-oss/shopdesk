@@ -87,6 +87,7 @@ try {
   assert.equal(await page.locator("h1").textContent(), "Overview");
   for (const [name, title] of [
     ["Billing & invoices", "Billing & invoices"],
+    ["Customer returns", "Customer returns"],
     ["Inventory", "Inventory"],
     ["Clients & pets", "Clients & pets"],
     ["Purchases", "Purchases"],
@@ -827,6 +828,7 @@ try {
     "overview",
     "inventory",
     "billing",
+    "returns",
     "clients",
     "purchases",
     "suppliers",
@@ -851,6 +853,7 @@ try {
     "overview",
     "inventory",
     "billing",
+    "returns",
     "clients",
     "purchases",
     "suppliers",

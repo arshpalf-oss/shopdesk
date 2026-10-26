@@ -12,6 +12,7 @@ import {
   fiscalYear,
   calculateTotals,
   quantity,
+  returnLineAmounts,
 } from "../shared.js";
 export const id = () => randomUUID();
 export const now = () => new Date().toISOString();
@@ -240,6 +241,31 @@ export const paymentSchema = z
     date,
   })
   .refine((s) => s.date <= today(), "Payment date cannot be in the future");
+const returnLineSchema = z.object({
+  line_index: z.coerce
+    .number()
+    .int("Select an invoice line")
+    .min(0)
+    .max(999),
+  qty: qty.refine((v) => v > 0, "Quantity must be greater than zero"),
+  condition: z
+    .enum(["resellable", "damaged", "expired", "service"])
+    .default("resellable"),
+});
+export const returnSchema = z.object({
+  invoice_id: required(50),
+  date,
+  reason: z
+    .string()
+    .trim()
+    .min(1, "A reason is required")
+    .max(1000, "Use up to 1,000 characters"),
+  notes: text(1000),
+  lines: z
+    .array(returnLineSchema)
+    .min(1, "Select at least one item to return")
+    .max(100),
+});
 const purchaseLine = z.object({
   product_id: required(50),
   qty: qty.refine((v) => v > 0, "Quantity must be greater than zero"),
@@ -294,6 +320,32 @@ export function purchasePaid(key) {
       "SELECT COALESCE(SUM(amount),0) AS n FROM payments WHERE purchase_id=?",
     )
     .get(key).n;
+}
+export function returnedQtyFor(invoiceId, lineIndex) {
+  return quantity(
+    db
+      .prepare(
+        "SELECT COALESCE(SUM(qty),0) AS n FROM return_lines WHERE invoice_id=? AND line_index=?",
+      )
+      .get(invoiceId, lineIndex).n,
+  );
+}
+export function returnedTotalFor(invoiceId) {
+  return db
+    .prepare(
+      "SELECT COALESCE(SUM(total),0) AS n FROM returns WHERE invoice_id=?",
+    )
+    .get(invoiceId).n;
+}
+// Refunds are recorded at invoice level. A return only creates a refundable
+// amount once the customer has actually paid more than the net value of the
+// goods they kept.
+export function refundDueFor(inv) {
+  const paid = paidFor(inv.id);
+  if (inv.status === "credited") return Math.max(0, paid);
+  if (inv.status !== "issued") return 0;
+  const net = inv.total - returnedTotalFor(inv.id);
+  return Math.min(Math.max(0, paid), Math.max(0, paid - net));
 }
 export function movement(
   product_id,
@@ -365,7 +417,12 @@ export function saveProduct(raw, key) {
 export function nextNumber(date, kind = "invoice") {
   const fy = fiscalYear(date),
     key = `${kind}:${fy}`,
-    prefix = kind === "invoice" ? getMeta("settings").invoice_prefix : "CN";
+    prefix =
+      kind === "invoice"
+        ? getMeta("settings").invoice_prefix
+        : kind === "return"
+          ? "RN"
+          : "CN";
   db.prepare(
     "INSERT INTO counters(key,value) VALUES (?,1) ON CONFLICT(key) DO UPDATE SET value=value+1",
   ).run(key);
@@ -544,10 +601,185 @@ export function saveInvoice(raw, key) {
   }
   return key;
 }
+export function saveReturn(raw) {
+  const data = parse(returnSchema, raw),
+    inv = getInvoice(data.invoice_id);
+  if (inv.status === "draft")
+    fail("Only an issued invoice can have items returned");
+  if (inv.status === "credited")
+    fail("This invoice has already been credited in full");
+  if (data.date < inv.date)
+    fail("Return date cannot precede the invoice date");
+  if (data.date > today()) fail("Return date cannot be in the future");
+  const seen = new Set();
+  const prepared = data.lines.map((entry) => {
+    if (seen.has(entry.line_index))
+      fail("Each invoice line can appear only once in a return");
+    seen.add(entry.line_index);
+    const line = inv.lines[entry.line_index];
+    if (!line) fail("The selected invoice line no longer exists");
+    const returned = returnedQtyFor(inv.id, entry.line_index);
+    const remaining = quantity(line.qty - returned);
+    if (remaining <= 0) fail(`${line.name} has already been fully returned`);
+    if (entry.qty > remaining + 0.0000001)
+      fail(
+        `Only ${remaining} ${line.unit} of ${line.name} can still be returned`,
+      );
+    return {
+      line_index: entry.line_index,
+      condition: line.type === "service" ? "service" : entry.condition,
+      line,
+      name: line.name,
+      hsn: line.hsn,
+      unit: line.unit,
+      type: line.type,
+      tax_treatment: line.tax_treatment,
+      gst_rate: line.gst_rate,
+      rate: line.rate,
+      discount: line.discount || 0,
+      ...returnLineAmounts(line, returned, entry.qty),
+    };
+  });
+  const totals = {
+    subtotal: 0,
+    discount: 0,
+    taxable: 0,
+    cgst: 0,
+    sgst: 0,
+    igst: 0,
+    tax: 0,
+    total: 0,
+  };
+  for (const line of prepared) {
+    totals.subtotal += line.gross;
+    totals.discount += line.discount_amount;
+    totals.taxable += line.taxable;
+    totals.cgst += line.cgst;
+    totals.sgst += line.sgst;
+    totals.igst += line.igst;
+    totals.tax += line.tax;
+    totals.total += line.total;
+  }
+  // If this return completes every remaining line, reverse the invoice's
+  // rupee round-off too. Otherwise the invoice's rounding stays outside the
+  // returned value until the final return.
+  const completesInvoice = inv.lines.every((line, index) => {
+    const already = returnedQtyFor(inv.id, index);
+    const inThisReturn = prepared
+      .filter((entry) => entry.line_index === index)
+      .reduce((n, entry) => n + entry.qty, 0);
+    return quantity(already + inThisReturn) >= quantity(line.qty) - 0.0000001;
+  });
+  const previousRounding = db
+    .prepare(
+      "SELECT COALESCE(SUM(rounding),0) AS n FROM returns WHERE invoice_id=?",
+    )
+    .get(inv.id).n;
+  const rounding = completesInvoice ? inv.rounding - previousRounding : 0;
+  const total = totals.total + rounding;
+  if (!Number.isSafeInteger(total) || total < 0 || total > 999999999999)
+    fail("This return value exceeds the supported monetary limit");
+  const netAfter = inv.total - returnedTotalFor(inv.id) - total;
+  const paidNow = paidFor(inv.id);
+  const ret = {
+    id: id(),
+    number: nextNumber(data.date, "return"),
+    invoice_id: inv.id,
+    date: data.date,
+    reason: data.reason,
+    notes: data.notes,
+    ...totals,
+    rounding,
+    total,
+    refund_due: Math.min(Math.max(0, paidNow), Math.max(0, paidNow - netAfter)),
+    created_at: now(),
+  };
+  insert("returns", ret);
+  for (const line of prepared) {
+    insert("return_lines", {
+      id: id(),
+      return_id: ret.id,
+      invoice_id: inv.id,
+      line_index: line.line_index,
+      product_id: line.line.product_id,
+      name: line.name,
+      hsn: line.hsn,
+      unit: line.unit,
+      type: line.type,
+      tax_treatment: line.tax_treatment,
+      gst_rate: line.gst_rate,
+      qty: line.qty,
+      rate: line.rate,
+      discount: line.discount,
+      gross: line.gross,
+      discount_amount: line.discount_amount,
+      taxable: line.taxable,
+      cgst: line.cgst,
+      sgst: line.sgst,
+      igst: line.igst,
+      tax: line.tax,
+      total: line.total,
+      condition: line.condition,
+      created_at: now(),
+    });
+    if (line.type === "service" || line.condition !== "resellable") continue;
+    // Goods that can be resold go back to the exact batches they were sold
+    // from. Damaged/expired goods are recorded but never re-enter stock.
+    let left = line.qty;
+    const allocations = db
+      .prepare(
+        "SELECT * FROM allocations WHERE invoice_id=? AND line_index=? ORDER BY rowid",
+      )
+      .all(inv.id, line.line_index);
+    for (const allocation of allocations) {
+      if (left <= 0) break;
+      const restored = quantity(
+        db
+          .prepare(
+            "SELECT COALESCE(SUM(qty),0) AS n FROM return_allocations WHERE allocation_id=?",
+          )
+          .get(allocation.id).n,
+      );
+      const available = quantity(allocation.qty - restored);
+      if (available <= 0) continue;
+      const used = Math.min(available, left);
+      const batch = requireRow("batches", allocation.batch_id);
+      update("batches", batch.id, { qty: quantity(batch.qty + used) });
+      insert("return_allocations", {
+        id: id(),
+        return_id: ret.id,
+        allocation_id: allocation.id,
+        product_id: allocation.product_id,
+        batch_id: allocation.batch_id,
+        qty: used,
+      });
+      movement(
+        allocation.product_id,
+        allocation.batch_id,
+        "return",
+        used,
+        ret.number,
+        data.reason,
+      );
+      left = quantity(left - used);
+    }
+    if (left > 0)
+      fail(
+        `Stock could not be restored for ${line.name}. Its original batch allocation is incomplete.`,
+      );
+  }
+  return ret.id;
+}
 export function creditInvoice(key, reason, date) {
   const inv = getInvoice(key);
   if (inv.status !== "issued")
     fail("Only an issued, uncredited invoice can be credited");
+  if (
+    db.prepare("SELECT id FROM returns WHERE invoice_id=? LIMIT 1").get(key)
+  )
+    fail(
+      "This invoice has recorded returns. Return any remaining items instead of issuing a full credit note.",
+    );
   if (!reason?.trim() || reason.trim().length > 1000)
     fail("A reason (up to 1,000 characters) is required");
   if (
@@ -695,6 +927,22 @@ export function buildState() {
   const credits = db
     .prepare("SELECT * FROM credits ORDER BY created_at DESC")
     .all();
+  const returnLines = db
+    .prepare("SELECT * FROM return_lines ORDER BY rowid")
+    .all();
+  const returnAllocations = db.prepare("SELECT * FROM return_allocations").all();
+  const returns = db
+    .prepare("SELECT * FROM returns ORDER BY created_at DESC,rowid DESC")
+    .all()
+    .map((ret) => ({
+      ...ret,
+      lines: returnLines.filter((line) => line.return_id === ret.id),
+      restocked_qty: quantity(
+        returnAllocations
+          .filter((allocation) => allocation.return_id === ret.id)
+          .reduce((n, allocation) => n + allocation.qty, 0),
+      ),
+    }));
   const invoices = db
     .prepare("SELECT * FROM invoices ORDER BY created_at DESC")
     .all()
@@ -706,14 +954,73 @@ export function buildState() {
           (n, p) => n + (p.direction === "receipt" ? p.amount : -p.amount),
           0,
         );
+      const invoiceReturns = returns.filter(
+        (ret) => ret.invoice_id === inv.id,
+      );
+      const returnedByLine = {};
+      for (const line of returnLines)
+        if (line.invoice_id === inv.id)
+          returnedByLine[line.line_index] = quantity(
+            (returnedByLine[line.line_index] || 0) + line.qty,
+          );
+      const returnedTotal = invoiceReturns.reduce(
+          (n, ret) => n + ret.total,
+          0,
+        ),
+        returnedQty = quantity(
+          invoiceReturns.reduce(
+            (n, ret) =>
+              n +
+              ret.lines.reduce((sum, line) => sum + Number(line.qty || 0), 0),
+            0,
+          ),
+        ),
+        fullyReturned =
+          inv.status !== "draft" &&
+          inv.lines.every(
+            (line, index) =>
+              quantity(returnedByLine[index] || 0) >=
+              quantity(line.qty) - 0.0005,
+          );
+      const netTotal = inv.total - returnedTotal;
       return {
         ...inv,
         paid,
-        balance: inv.status === "issued" ? inv.total - paid : 0,
-        refund_due: inv.status === "credited" ? paid : 0,
+        balance:
+          inv.status === "issued" ? Math.max(0, netTotal - paid) : 0,
+        refund_due:
+          inv.status === "credited"
+            ? Math.max(0, paid)
+            : inv.status === "issued"
+              ? Math.min(Math.max(0, paid), Math.max(0, paid - netTotal))
+              : 0,
         credit: credits.find((c) => c.invoice_id === inv.id) || null,
+        returned_total: returnedTotal,
+        returned_qty: returnedQty,
+        returned_count: invoiceReturns.length,
+        fully_returned: fullyReturned,
+        returned_by_line: returnedByLine,
+        returns: invoiceReturns.map((ret) => ({
+          id: ret.id,
+          number: ret.number,
+          date: ret.date,
+          total: ret.total,
+          reason: ret.reason,
+          restocked_qty: ret.restocked_qty,
+        })),
       };
     });
+  const invoiceById = new Map(invoices.map((inv) => [inv.id, inv]));
+  for (const ret of returns) {
+    const inv = invoiceById.get(ret.invoice_id);
+    ret.invoice_number = inv?.number || "";
+    ret.invoice_date = inv?.date || "";
+    ret.invoice_total = inv?.total || 0;
+    ret.client_name = inv?.customer.name || "";
+    ret.pet_name = inv?.pet.name || "";
+    ret.invoice_refund_due = inv?.refund_due || 0;
+    ret.fully_returned = inv?.fully_returned || false;
+  }
   const purchases = db
     .prepare("SELECT * FROM purchases ORDER BY created_at DESC")
     .all()
@@ -735,6 +1042,7 @@ export function buildState() {
     purchases,
     payments,
     credits,
+    returns,
     movements: db
       .prepare(
         "SELECT * FROM movements ORDER BY created_at DESC,rowid DESC LIMIT 500",
