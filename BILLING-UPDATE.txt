@@ -1,0 +1,91 @@
+SHOP DESK — POS, THERMAL BILLS & CORPORATE INVOICE TEMPLATES
+
+LATEST: For the cumulative equal-GST/readable-UI update, use
+TAX-UI-UPDATE.txt and shop-desk-tax-ui-update.zip. It also includes every
+POS/template/navigation feature described here. Root shared.js must be updated
+as well as the frontend, and the server must be restarted.
+
+WHAT IS INCLUDED
+
+- Existing billing/inventory/payment workflows plus a "New POS bill" entry.
+- 80 mm and 58 mm thermal/POS bill preview, browser printing and PDF download.
+- Corporate (default), Compact and Classic monochrome A4 invoice templates.
+- Settings > Templates & printing: default output, paper width, receipt footer,
+  optional receipt terms and UPI-QR visibility. Preview your real saved records.
+- Same invoice record for A4 and thermal: printing never creates another sale,
+  payment, invoice number or stock movement.
+- Earlier left-navigation scrolling fix remains included.
+
+UPDATE AN EXISTING LOCAL INSTALLATION — NO REBUILD REQUIRED
+
+1. Download a backup from Settings > Data & security before updating.
+2. Stop shop desk with Ctrl+C in its terminal.
+3. Extract shop-desk-billing-update.zip, then OPEN the extracted folder.
+4. Copy ALL CONTENTS from inside it into your EXISTING app folder — the folder
+   containing package.json. Merge folders and replace matching files.
+
+   The required application changes are:
+     dist/         Complete, already-built frontend
+     src/          Updated frontend source
+     server/       Updated PDF generation, API and settings validation
+     printing.js   NEW shared printing module in the app's root folder
+
+   Also included: updated README, Dockerfile, isolated tests and this guide.
+   Do not copy only src/styles.css or only the dist folder for this update.
+   Do not nest the update folder inside your app instead of merging contents.
+5. From the same EXISTING app folder, run:
+
+   npm start
+
+6. Hard-refresh the browser: Ctrl+F5 on Windows/Linux, Command+Shift+R on macOS.
+
+KEEP YOUR DATA
+
+Keep the existing data/ folder and any custom DB_PATH unchanged. This update
+archive contains NO database, clinic records, passwords, sessions or sample
+business data. It does not reset, restore or replace your workspace.
+Dependencies are unchanged, so an already-working installation needs neither
+npm ci nor npm run build. If you build from source later, npm run build still
+works. Docker installations must rebuild the image and retain the same data
+volume; the updated Dockerfile copies the new printing.js module.
+
+HOW TO USE IT
+
+A. Settings > Templates & printing
+   Choose an invoice template, default format and 58/80 mm roll width. Save.
+   Corporate is the default for existing clinics that have no print preference.
+   Use "Show print preview" to preview an existing record without creating data.
+
+B. Billing & invoices > New POS bill
+   Search/scan products, choose client or walk-in, review quantities/prices, and
+   select payment received. "Unpaid" remains the safe default. Select "Paid in
+   full" only after money is actually received. Issue bill, then click Print or
+   Download PDF. A failed issue cannot be printed as a successful sale.
+
+C. Any saved invoice
+   Use Output format to choose A4, Thermal 80 mm or Thermal 58 mm. Choose an A4
+   template if needed. The current selection controls Print and Download PDF.
+   Credit PDF follows the selected paper format too.
+
+PRINTER SETUP & LIMITS
+
+Install the printer manufacturer's standard driver. Select the matching roll
+width, 100% scale, and turn browser headers/footers off. In a PDF viewer select
+that same thermal printer/paper, not "fit to A4". Allow print popups if blocked.
+Very long bills may require a custom roll length in your driver. Thermal PDFs
+are content-sized and split into continuation pages above 1,000 mm per page.
+
+Printing uses the normal driver/browser dialog. Direct ESC/POS, silent printing,
+automatic paper cutting, automatic cash-drawer opening and card-terminal/payment
+integration are not included. No physical thermal printer was connected during
+testing; digital paper dimensions, generated content and workflows were tested.
+UPI QRs are payment instructions, not automatic confirmation of a payment.
+
+VERIFICATION
+
+The original POS release passed 29 tests. The latest cumulative release passes
+37 automated tests and the expanded isolated browser suite. Checks include
+58/80 mm PDF dimensions, actual browser print page sizes, all invoice layouts,
+long-bill pagination, barcode-keyboard POS billing, one actual recorded payment
+per sale, stock deduction, settings persistence, no duplicate transactions,
+responsive pages, the scrolling sidebar and existing billing/backup workflows.

@@ -1,0 +1,42 @@
+SHOP DESK — LEFT MENU SCROLL UPDATE
+
+The clinic header stays fixed. Menu links scroll in their own pane. On short
+screens, "Scroll menu" up/down buttons provide another way to reach every link.
+Mouse wheels, trackpads, touch swipes, Tab and keyboard scrolling are supported.
+
+APPLY TO AN EXISTING INSTALLATION (NO BUILD REQUIRED)
+
+1. If possible, download a backup from Settings > Data & security first.
+2. Stop the running shop desk server with Ctrl+C in its terminal.
+3. Extract shop-desk-nav-fix.zip.
+4. Open your EXISTING shop desk folder — the one containing package.json.
+   Copy the update's dist and src folders INTO that folder. Merge folders and
+   replace files when asked. The ZIP contains the complete src folder.
+   Do not put them inside another nested shop-desk folder.
+5. In that same existing folder, run:
+
+   npm start
+
+6. Open the application and hard-refresh the page (Ctrl+F5 on Windows/Linux;
+   Command+Shift+R on macOS).
+
+There is no need to run npm ci or npm run build for this UI-only update.
+The production frontend in dist is already built. Updated source is included
+so a future build keeps the fix.
+
+IMPORTANT: Keep your existing data folder and any custom DB_PATH unchanged.
+Do not reset the workspace or perform a restore to apply this update.
+This patch contains no database, business records, backend or dependencies.
+
+VERIFY
+
+Make the window short. Place the pointer over the menu links and scroll down,
+or use the down-arrow button next to "Scroll menu". Settings and HSN & SAC codes
+must be reachable, while the clinic header remains visible. On a tall window
+where all links fit, the scroll buttons are automatically hidden.
+
+SOURCE-ONLY ALTERNATIVE
+
+The changed UI files are src/App.jsx, src/SidebarMenu.jsx and src/styles.css.
+If copying source instead of the prebuilt dist folder, run npm run build before
+npm start. Replacing only styles.css is not sufficient for this update.

@@ -1,0 +1,106 @@
+SHOP DESK — EQUAL GST COMPONENTS & CLEARER UI
+Cumulative update · 25 October 2026
+
+WHAT CHANGED
+
+1. Equal CGST and SGST/UTGST on new and re-saved intrastate bills.
+   The shared frontend/backend calculation rounds a half-rate component to
+   paise and uses that same amount for both components. Actual tax, saved
+   totals, payments, reports and printed documents reconcile; the change is
+   not just visual.
+
+   For the reported example (GST exclusive):
+     Supply value                  Rs 1,499.00
+     GST rate                      5%
+     CGST                          Rs    37.48
+     SGST / UTGST                  Rs    37.48
+     Total GST                     Rs    74.96
+     Before optional rupee round   Rs 1,573.96
+     Round off                     Rs     0.04
+     Grand total                   Rs 1,574.00
+
+   Inclusive pricing preserves the entered post-discount gross. Interstate
+   IGST is unchanged. Item tax rates and classifications remain under your
+   control; HSN selection does not automatically set a GST rate.
+
+2. A simpler, more readable interface.
+   System sans-serif font, 14px base, larger controls/labels/table text, dark
+   charcoal primary text, readable secondary text, neutral white/gray surfaces,
+   clearer borders and visible focus/scroll states. Status colours remain
+   distinct. Mobile actions retain their labels, including New POS bill.
+   Dashboard cards grow with the text and chart labels stay readable on phones.
+
+3. All earlier functionality is included.
+   Scrollable left menu with fixed clinic header; inventory/FEFO, invoicing,
+   purchases, payments, reporting and backups; New POS bill; Corporate/Compact/
+   Classic A4 layouts; 58/80mm thermal bills; Settings > Templates & printing.
+
+UPDATE YOUR EXISTING INSTALLATION — PREBUILT, NO REBUILD NEEDED
+
+1. Download a backup from Settings > Data & security.
+2. Stop shop desk: Ctrl+C in its terminal.
+3. Extract shop-desk-tax-ui-update.zip. Open the extracted folder.
+4. Copy ALL ITS CONTENTS into your EXISTING app folder containing package.json.
+   Merge folders and replace matching files. Do not create a nested update
+   folder inside the application.
+
+   In particular, update ALL of:
+     shared.js       REQUIRED: backend + frontend tax arithmetic
+     printing.js     Shared invoice/receipt content
+     server/         Runtime API/PDF/settings modules
+     dist/           Complete, prebuilt frontend
+     src/            Updated source, including contrast.css
+
+   Documentation and isolated test files are also supplied. Copying only the
+   styles, src/ or dist/ folder will NOT update the backend calculation.
+
+5. Keep your existing data/ directory, custom DB_PATH, settings and credentials.
+   The update archive contains NO database, clinic records or sample records.
+6. Start from your existing package.json folder:
+
+     npm start
+
+7. Hard-refresh the browser: Ctrl+F5 on Windows/Linux, Command+Shift+R on macOS.
+   Close/reopen any old invoice preview or print tab; an already-open print
+   window contains its earlier HTML until opened again.
+
+Dependencies are unchanged. An already-working install needs neither npm ci
+nor npm run build. If building from source later, npm run build remains valid.
+Docker deployments must rebuild the image and retain the existing data volume.
+For a fresh install, use the full shop-desk-updated.zip, not this update-only ZIP;
+follow the README setup steps. A fresh install starts without business records.
+
+EXISTING INVOICES, DRAFTS AND PAYMENTS
+
+Already-issued invoice tax/price/clinic snapshots and recorded payments are
+preserved. Their reprints show the original saved amounts; an update must not
+silently rewrite a historical invoice or disguise its earlier tax split.
+A notice identifies an older unequal split when its invoice is opened.
+If a historical correction is necessary, follow the proper correction/credit-
+note and reissue process with your accountant; reprinting is not a correction.
+For an older draft, open Edit draft and save or issue it to apply the new rule.
+
+New invoices use the new rule automatically. There is no switch to make new
+intrastate bills fall back to the old unequal split.
+
+CHECKS COMPLETED
+
+- 37 automated tests passed, including the exact Rs 1,499 example, inclusive
+  entry, multiple lines, discounts, fractional quantities, component sums,
+  persistence, actual payments, historical immutability, auth, stock and backup.
+- Full disposable-database browser suite passed: entry/save/payment, report GST
+  summaries, all A4 templates, both thermal widths, settings, barcode-style POS,
+  no duplicate transactions, mobile bill entry, desktop/mobile text contrast,
+  and all six short/mobile sidebar sizes with touch/wheel/keyboard scrolling.
+- The example was rendered and text-checked in all three A4 PDFs and both true
+  58/80mm PDFs: both components Rs 37.48, round off Rs 0.04, total Rs 1,574.00.
+- Tests use temporary databases only. No test business data is shipped.
+
+PRINTING LIMITS ARE UNCHANGED
+
+Install the printer's standard operating-system driver; use the matching 58/80mm
+roll, 100% scale and browser headers/footers off. Allow print popups. Printing is
+through the browser/driver or a correctly sized PDF, not direct ESC/POS, silent
+printing, automatic cutting, a cash drawer, a payment terminal or a gateway.
+No physical thermal printer was connected during validation. UPI QRs are payment
+instructions, not automatic payment confirmation. Docker was not runtime-tested.

@@ -1,0 +1,890 @@
+/* A single, high-contrast light theme. Print documents have their own styles. */
+:root {
+  font-family: "Segoe UI", Arial, Helvetica, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #1f2937;
+  background: #f3f4f6;
+  --ink: #111827;
+  --muted: #475569;
+  --green: #22543d;
+  --green-dark: #163f2c;
+  --green-soft: #e8f2ec;
+  --border: #d1d5db;
+  --surface: #ffffff;
+  --radius: 8px;
+}
+body {
+  color: #1f2937;
+  background: #f3f4f6;
+}
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+h1,
+h2,
+h3 {
+  color: #111827;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+p {
+  line-height: 1.55;
+}
+.main-shell,
+.workspace-main {
+  background: #f3f4f6;
+  color: #1f2937;
+}
+.topbar,
+.sidebar,
+.panel,
+.stat-card {
+  background: #fff;
+}
+.panel,
+.stat-card,
+.inventory-summary,
+.billing-summary {
+  border-color: #d1d5db;
+  border-radius: 8px;
+  box-shadow: none;
+}
+.page-heading h1 {
+  font-size: 28px;
+  color: #111827;
+  font-weight: 650;
+}
+.page-heading p {
+  font-size: 14px;
+  color: #475569;
+}
+.panel-heading h2,
+.settings-content .panel-heading h2,
+.quick-actions-panel .panel-heading h2 {
+  font-size: 16px;
+  font-weight: 650;
+  color: #111827;
+}
+.panel-heading p,
+.settings-content .panel-heading p {
+  color: #475569;
+  font-size: 13px;
+}
+.panel-heading {
+  border-bottom-color: #d1d5db;
+}
+.panel-heading > .text-button {
+  font-size: 13px;
+  font-weight: 600;
+}
+.brand {
+  color: #182b23;
+}
+.brand-period {
+  color: #22543d;
+}
+.nav-item {
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
+  min-height: 42px;
+}
+.nav-item:hover {
+  background: #f1f5f9;
+  color: #111827;
+}
+.nav-item.active {
+  background: #e8f2ec;
+  color: #163f2c;
+  font-weight: 650;
+}
+.nav-label {
+  font-size: 11px;
+  color: #475569;
+  font-weight: 650;
+  letter-spacing: 0.75px;
+}
+.clinic-switcher {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+}
+.clinic-switcher strong {
+  color: #111827;
+  font-size: 14px;
+  font-weight: 600;
+}
+.clinic-switcher small {
+  color: #475569;
+  font-size: 12px;
+}
+.sidebar-scroll-controls {
+  min-height: 42px;
+  border-top-color: #cbd5e1;
+  color: #475569;
+}
+.sidebar-scroll-controls > span {
+  font-size: 12px;
+}
+.sidebar-scroll-controls > .icon-btn {
+  height: 30px;
+  width: 32px;
+  border-color: #94a3b8;
+  background: #f8fafc;
+  color: #1f2937;
+}
+.sidebar-scroll {
+  scrollbar-color: #7b8794 #f1f5f9;
+}
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  background: #7b8794;
+  border-color: #f1f5f9;
+}
+.sidebar-scroll::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+.connection-status,
+.sidebar-version {
+  color: #475569;
+}
+.breadcrumb {
+  font-size: 13px;
+  color: #475569;
+}
+.breadcrumb strong {
+  color: #1f2937;
+}
+.global-search {
+  color: #475569;
+  font-size: 13px;
+}
+kbd {
+  color: #475569;
+  font-size: 12px;
+  border-color: #cbd5e1;
+}
+.btn {
+  min-height: 42px;
+  height: auto;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 6px;
+  padding: 9px 14px;
+  line-height: 1.35;
+}
+.btn-sm {
+  min-height: 36px;
+  height: auto;
+  font-size: 13px;
+  padding: 7px 11px;
+}
+.btn-primary {
+  background: #22543d;
+  border-color: #22543d;
+  color: #fff;
+  box-shadow: none;
+}
+.btn-primary:hover:not(:disabled) {
+  background: #163f2c;
+  border-color: #163f2c;
+  color: #fff;
+  box-shadow: none;
+}
+.btn-secondary,
+.btn-white {
+  background: #fff;
+  border-color: #8995a4;
+  color: #1f2937;
+}
+.btn-secondary:hover:not(:disabled),
+.btn-white:hover:not(:disabled) {
+  background: #f1f5f9;
+  border-color: #64748b;
+  color: #111827;
+}
+.btn-danger {
+  color: #fff;
+  background: #991b1b;
+  border-color: #991b1b;
+}
+.btn-danger:hover:not(:disabled) {
+  color: #fff;
+  background: #7f1d1d;
+}
+.btn-danger-ghost,
+.text-red {
+  color: #991b1b;
+}
+.text-button {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1b5e46;
+}
+.icon-btn {
+  min-width: 34px;
+  min-height: 34px;
+  color: #475569;
+}
+.icon-btn:hover {
+  color: #111827;
+  background: #f1f5f9;
+}
+input,
+select {
+  min-height: 42px;
+}
+input,
+select,
+textarea,
+.field input,
+.field select,
+.field textarea {
+  color: #111827;
+  background-color: #fff;
+  border-color: #8995a4;
+  border-radius: 6px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+input,
+select {
+  height: 42px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+input::placeholder,
+textarea::placeholder,
+.field input::placeholder,
+.field textarea::placeholder {
+  color: #64748b;
+  opacity: 1;
+  font-size: 13px;
+}
+input:focus,
+select:focus,
+textarea:focus,
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+  border-color: #22543d;
+  box-shadow: 0 0 0 3px #22543d21;
+}
+input:disabled,
+select:disabled,
+textarea:disabled {
+  background-color: #f1f5f9;
+  color: #64748b;
+  border-color: #aab4c0;
+}
+input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+  accent-color: #22543d;
+}
+button:focus-visible,
+a:focus-visible {
+  outline: 3px solid #22543d;
+  outline-offset: 3px;
+}
+.field-label,
+.dialog .field-label,
+.settings-content .field-label {
+  color: #1f2937;
+  font-size: 13px;
+  font-weight: 600;
+}
+.field-hint,
+.dialog .field-hint {
+  color: #475569;
+  font-size: 12px !important;
+  line-height: 1.55;
+}
+.form-section-title h3,
+.setup-dialog .form-section-title h3 {
+  font-size: 15px;
+  color: #111827;
+  font-weight: 650;
+}
+.form-section-title p {
+  font-size: 13px;
+  color: #475569;
+}
+.search-box {
+  background: #fff;
+  border-color: #8995a4;
+  min-height: 42px;
+}
+.search-box input,
+.search-box input::placeholder {
+  font-size: 14px;
+}
+.search-box input {
+  border: 0;
+  min-height: 38px;
+  height: 38px;
+}
+.search-select-menu {
+  border-color: #94a3b8;
+  box-shadow: 0 6px 20px #1f29371a;
+}
+.pick-item-name > strong {
+  font-size: 14px;
+  color: #111827;
+  font-weight: 600;
+}
+.pick-item-name > small,
+.pick-price > small {
+  color: #475569;
+  font-size: 12px;
+}
+.pick-price {
+  color: #111827;
+  font-size: 14px;
+  font-weight: 600;
+}
+.table-primary,
+.invoice-lines-table .table-primary,
+.reference-description .table-primary {
+  color: #111827;
+  font-size: 14px;
+  font-weight: 600;
+}
+.table-secondary,
+.invoice-lines-table .table-secondary,
+.reference-description .table-secondary {
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.5;
+}
+th,
+.invoice-lines-table th {
+  background: #f1f5f9;
+  color: #374151;
+  font-size: 12px;
+  font-weight: 650;
+  padding-top: 12px;
+  padding-bottom: 12px;
+  border-color: #cbd5e1;
+  letter-spacing: 0.3px;
+}
+td,
+.invoice-lines-table td {
+  color: #1f2937;
+  font-size: 14px;
+  border-color: #d1d5db;
+}
+tbody tr:hover {
+  background: #f8fafc;
+}
+.table-footer {
+  color: #475569;
+  font-size: 12px;
+  border-color: #d1d5db;
+}
+.money,
+.stat-value,
+.inventory-summary strong,
+.billing-summary strong {
+  color: #111827;
+  font-variant-numeric: tabular-nums;
+}
+.stat-top {
+  color: #374151;
+  font-size: 14px;
+  font-weight: 500;
+}
+.stat-note {
+  color: #475569;
+  font-size: 12px;
+}
+.stat-value {
+  font-weight: 650;
+}
+.invoice-totals {
+  color: #1f2937;
+}
+.invoice-totals > div {
+  color: #374151;
+  font-size: 14px;
+}
+.invoice-totals > div > .money {
+  color: #111827;
+  font-size: 15px;
+  font-weight: 600;
+}
+.invoice-totals .grand-total {
+  color: #111827;
+  font-size: 16px;
+  border-color: #8995a4;
+}
+.invoice-totals .grand-total > .money {
+  color: #111827;
+  font-size: 26px;
+  font-weight: 650;
+}
+.invoice-totals .balance-preview,
+.invoice-totals .balance-preview > .money {
+  color: #111827;
+  font-size: 15px;
+}
+.segments {
+  background: #eef2f6;
+  border-color: #cbd5e1;
+}
+.segments > button {
+  color: #475569;
+  font-size: 13px;
+  min-height: 36px;
+  font-weight: 500;
+}
+.segments > button.active {
+  color: #163f2c;
+  background: #fff;
+  box-shadow: 0 0 0 1px #cbd5e1;
+  font-weight: 650;
+}
+.badge {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  padding: 3px 7px;
+  border: 1px solid #cbd5e1;
+  background: #f1f5f9;
+  color: #374151;
+}
+.badge-green {
+  background: #e8f3eb;
+  color: #14532d;
+  border-color: #9cbea8;
+}
+.badge-amber {
+  background: #fff7e6;
+  color: #78350f;
+  border-color: #c6a15d;
+}
+.badge-red {
+  background: #fef2f2;
+  color: #991b1b;
+  border-color: #d79c9c;
+}
+.badge-purple {
+  background: #f3e8ff;
+  color: #6b21a8;
+  border-color: #b5a2cf;
+}
+.notice {
+  color: #334155;
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.notice > svg {
+  color: currentColor;
+}
+.notice-warning {
+  color: #78350f;
+  background: #fff7e6;
+  border-color: #c6a15d;
+}
+.notice-warning > svg {
+  color: #78350f;
+}
+.notice-neutral {
+  color: #334155;
+  background: #f1f5f9;
+}
+.error-box {
+  color: #991b1b;
+  background: #fef2f2;
+  border-color: #d79c9c;
+  font-size: 13px;
+}
+.toggle {
+  background: #7b8794;
+}
+.toggle.is-on {
+  background: #22543d;
+}
+.toggle-row strong {
+  color: #1f2937;
+  font-size: 14px;
+  font-weight: 600;
+}
+.toggle-row > div > span {
+  color: #475569;
+  font-size: 13px;
+}
+.settings-nav > button {
+  font-size: 14px;
+  color: #374151;
+  min-height: 42px;
+}
+.settings-nav > button.active {
+  color: #163f2c;
+  background: #e8f2ec;
+  font-weight: 600;
+}
+.settings-nav-note,
+.settings-nav-note p {
+  color: #475569;
+  font-size: 12px;
+}
+.settings-nav-note > strong {
+  color: #1f2937;
+  font-size: 13px;
+}
+.template-option > strong {
+  font-size: 14px;
+  color: #111827;
+}
+.template-option > span:last-child {
+  color: #475569;
+  font-size: 12px;
+}
+.template-option.selected {
+  border-color: #22543d;
+  box-shadow: 0 0 0 1px #22543d;
+  background: #fff;
+}
+.document-format-bar > p,
+.thermal-print-hint {
+  color: #475569;
+  font-size: 12px;
+}
+.document-actions .text-button {
+  color: #1b5e46;
+  font-size: 13px;
+}
+.dialog-heading h2 {
+  color: #111827;
+  font-size: 22px;
+  font-weight: 650;
+}
+.dialog-heading p {
+  color: #475569;
+  font-size: 14px;
+}
+.dialog-heading {
+  border-bottom-color: #cbd5e1;
+}
+.dialog-footer {
+  border-top-color: #cbd5e1;
+  background: #f8fafc;
+}
+.footer-hint {
+  color: #475569;
+  font-size: 12px;
+}
+.welcome-banner,
+.reference-banner,
+.setup-welcome {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+.welcome-banner h2,
+.reference-banner h2,
+.setup-welcome strong {
+  color: #111827;
+}
+.welcome-banner p,
+.reference-banner p,
+.setup-welcome p {
+  color: #475569;
+  font-size: 14px;
+}
+.empty-state h3,
+.overview-bottom .empty-compact h3 {
+  color: #1f2937;
+  font-size: 17px;
+  font-weight: 600;
+}
+.empty-state p,
+.overview-bottom .empty-compact p {
+  color: #475569;
+  font-size: 14px;
+}
+.quick-actions strong {
+  color: #1f2937;
+  font-size: 14px;
+}
+.quick-actions small {
+  color: #475569;
+  font-size: 12px;
+}
+.chart-legend,
+.chart-total > span:nth-child(2) {
+  color: #475569;
+  font-size: 12px;
+}
+.sales-chart text {
+  fill: #475569;
+  font-size: 12px;
+}
+.workspace-footer {
+  color: #475569;
+  font-size: 12px;
+  border-top-color: #d1d5db;
+}
+.toast {
+  color: #14532d;
+  border-color: #9cbea8;
+  background: #fff;
+  font-size: 13px;
+}
+.toast-error {
+  color: #991b1b;
+  border-color: #d79c9c;
+}
+.login-main {
+  color: #1f2937;
+}
+.login-form h2 {
+  color: #111827;
+  font-weight: 650;
+}
+.login-form > p,
+.secure-note {
+  color: #475569;
+  font-size: 14px;
+}
+.login-form .field-label {
+  color: #1f2937;
+}
+@media (max-width: 760px) {
+  .page-heading h1 {
+    font-size: 25px;
+  }
+  .page-actions {
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .page-actions .btn {
+    font-size: 13px;
+    min-height: 40px;
+  }
+  .dialog-heading {
+    padding: 18px;
+  }
+  .dialog-heading h2 {
+    font-size: 20px;
+  }
+  .dialog-heading p {
+    font-size: 13px;
+  }
+  .dialog-footer .btn {
+    min-height: 40px;
+    font-size: 13px;
+  }
+  .document-actions {
+    flex-wrap: wrap;
+  }
+  .document-actions .btn {
+    min-height: 36px;
+    height: auto;
+    font-size: 12px;
+    padding: 8px 10px;
+  }
+  .document-actions .text-button {
+    font-size: 12px;
+  }
+  .settings-nav > button {
+    font-size: 13px;
+    min-height: 40px;
+  }
+  .field input,
+  .field select,
+  .field textarea {
+    font-size: 14px;
+  }
+  .settings-panel-body {
+    padding: 18px;
+  }
+  .welcome-banner p,
+  .reference-banner p {
+    font-size: 13px;
+  }
+  .stat-top {
+    font-size: 13px;
+  }
+  .panel-heading {
+    gap: 12px;
+  }
+  .panel-heading h2 {
+    font-size: 15px;
+  }
+  .template-option {
+    grid-template-columns: 88px 1fr;
+  }
+  .template-thumbnail {
+    width: 88px;
+  }
+  .document-format-bar {
+    padding: 12px;
+  }
+  .document-format-bar > p {
+    font-size: 12px;
+  }
+}
+.global-search kbd {
+  font-size: 12px;
+  color: #475569;
+}
+.save-status.unsaved {
+  color: #78350f;
+}
+.toggle {
+  width: 42px;
+  height: 24px;
+}
+.toggle > input {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+}
+.toggle > span {
+  width: 18px;
+  height: 18px;
+}
+.toggle.is-on > span {
+  left: 21px;
+}
+.toggle:focus-within {
+  outline: 3px solid #22543d;
+  outline-offset: 3px;
+}
+/* Larger type must not get clipped by the previous fixed-height dashboard cards. */
+.revenue-panel,
+.quick-actions-panel {
+  height: auto;
+  min-height: 310px;
+}
+.revenue-panel {
+  display: flex;
+  flex-direction: column;
+}
+.revenue-chart {
+  flex: 1 1 auto;
+  min-height: 180px;
+  height: 190px;
+  padding-bottom: 12px;
+}
+.quick-actions-panel {
+  padding-bottom: 4px;
+}
+.invoice-form-dialog .invoice-create-heading {
+  padding-bottom: 12px;
+  margin-bottom: 16px;
+}
+.invoice-form-dialog .invoice-create-heading h3 {
+  margin-top: 4px;
+}
+.invoice-form-dialog .invoice-top-fields {
+  margin-bottom: 14px;
+}
+.invoice-form-dialog .invoice-items-heading {
+  margin-top: 16px;
+  margin-bottom: 10px;
+}
+.invoice-form-dialog .item-search-row {
+  margin-bottom: 12px;
+}
+.invoice-form-dialog .invoice-bottom-fields {
+  margin-top: 18px;
+}
+.invoice-form-dialog .invoice-totals {
+  gap: 10px;
+}
+.invoice-form-dialog .invoice-client-fields .label-with-action > label {
+  font-size: 13px;
+  color: #1f2937;
+  font-weight: 600;
+}
+.invoice-form-dialog .label-with-action > button {
+  font-size: 13px;
+  color: #1b5e46;
+}
+.invoice-form-dialog input:not([type="checkbox"]),
+.invoice-form-dialog select,
+.invoice-form-dialog textarea,
+.invoice-form-dialog .field input,
+.invoice-form-dialog .field select,
+.invoice-form-dialog .field textarea {
+  font-size: 14px;
+  border-color: #8995a4;
+}
+.invoice-form-dialog .search-select > .search-box {
+  border-color: #8995a4;
+}
+.invoice-form-dialog .search-select input {
+  border: 0;
+}
+.invoice-lines-table .money {
+  font-size: 14px;
+}
+.invoice-form-dialog .price-mode select {
+  min-height: 36px;
+  height: 36px;
+}
+.invoice-form-dialog .round-off-check > .money {
+  font-size: 14px;
+}
+.dialog .field input,
+.dialog .field select,
+.dialog .field textarea,
+.settings-content .field input,
+.settings-content .field select,
+.settings-content .field textarea {
+  border-color: #8995a4;
+  font-size: 14px;
+}
+.dialog .field input:focus,
+.dialog .field select:focus,
+.dialog .field textarea:focus,
+.settings-content .field input:focus,
+.settings-content .field select:focus,
+.settings-content .field textarea:focus {
+  border-color: #22543d;
+  box-shadow: 0 0 0 3px #22543d21;
+}
+@media (max-width: 760px) {
+  .welcome-content {
+    max-width: 100%;
+  }
+  .care-illustration {
+    display: none;
+  }
+}
+@media (max-width: 760px) {
+  .page-heading {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+  }
+  .page-heading p {
+    max-width: none;
+  }
+  .page-actions {
+    width: 100%;
+    justify-content: flex-start;
+    gap: 8px;
+  }
+  .page-actions .btn-secondary {
+    width: auto;
+    padding: 9px 12px;
+  }
+  .page-actions .btn-secondary > span {
+    display: inline;
+  }
+}
+.dialog-body,
+.table-scroll,
+.search-select-menu,
+.code-picker-list {
+  scrollbar-color: #7b8794 #f1f5f9;
+}
