@@ -150,7 +150,7 @@ export default function Billing() {
     setCompleting(true);
     try {
       const payload = {
-        customer_id: customerId ? Number(customerId) : null,
+        customer_id: customerId || null,
         is_interstate: isInterstate,
         discount: Number(billDiscount) || 0,
         payment_method: paymentMethod,

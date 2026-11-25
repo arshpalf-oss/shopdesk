@@ -1,0 +1,35 @@
+# shopdesk — full local stack: MongoDB 8 + shopdesk (API + SPA on :8787)
+# Usage: docker compose up --build
+# Demo logins after seed (first run does it automatically):
+#   owner  aarav@shopdesk.demo / demo1234
+#   staff  riya@shopdesk.demo  / demo1234
+services:
+  mongo:
+    image: mongo:8
+    restart: unless-stopped
+    volumes:
+      - shopdesk-mongo:/data/db
+    ports:
+      - "27017:27017"
+
+  seed:
+    build: .
+    depends_on:
+      - mongo
+    environment:
+      MONGODB_URI: mongodb://mongo:27017/shopdesk
+    command: ["node", "scripts/seed-demo.js"]
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      - mongo
+      - seed
+    environment:
+      MONGODB_URI: mongodb://mongo:27017/shopdesk
+    ports:
+      - "8787:8787"
+
+volumes:
+  shopdesk-mongo:

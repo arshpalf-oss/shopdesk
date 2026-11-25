@@ -1,7 +1,7 @@
 // shopdesk — settings: business, billing, account, backup
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Store, ReceiptText, ShieldCheck, Save, Download, Upload, RotateCcw, Lock, KeyRound, UserRound, Building2, TriangleAlert,
+  Store, ReceiptText, ShieldCheck, Save, Download, Upload, RotateCcw, Lock, KeyRound, UserRound, Building2, TriangleAlert, Trash2, BadgeCheck,
 } from 'lucide-react';
 import { api } from '../api.js';
 import { CURRENCIES } from '../api.js';
@@ -29,7 +29,7 @@ export default function Settings() {
   const [restoreFile, setRestoreFile] = useState(null);
   const [restorePayload, setRestorePayload] = useState(null);
   const [restoring, setRestoring] = useState(false);
-  const [confirmReset, setConfirmReset] = useState(false);
+  const [confirmAction, setConfirmAction] = useState(null); // 'sample' | 'clear'
   const [resetting, setResetting] = useState(false);
 
   useEffect(() => {
@@ -115,15 +115,16 @@ export default function Settings() {
     }
   };
 
-  const doReset = async () => {
+  const doAction = async (action, doneMsg) => {
     setResetting(true);
     try {
-      await api('/reset-demo', { method: 'POST' });
-      toast.success('Demo data restored', 'Shivam General Store is fresh again.');
+      await api(action === 'sample' ? '/settings/load-sample' : '/settings/clear-data', { method: 'POST' });
+      toast.success(doneMsg[0], doneMsg[1]);
       setTimeout(() => window.location.reload(), 700);
     } catch (err) {
-      toast.error('Reset failed', err.message);
+      toast.error('Action failed', err.message);
       setResetting(false);
+      setConfirmAction(null);
     }
   };
 
@@ -204,6 +205,14 @@ export default function Settings() {
         {/* ============ account ============ */}
         <div className="card card-pad" style={{ alignSelf: 'start' }}>
           <div className="card-title"><span style={{ display: 'flex', alignItems: 'center', gap: 10 }}><ShieldCheck size={17} color="var(--violet)" /> Your account</span><small>{user?.email}</small></div>
+          {business && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '-4px 0 12px', flexWrap: 'wrap' }}>
+              <span className="badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 10px', borderRadius: 999, fontSize: 10.5, fontWeight: 700, letterSpacing: '.04em', color: '#0b120a', background: 'linear-gradient(135deg, var(--lime), var(--teal))' }}><BadgeCheck size={12} /> {business.plan === 'trial' ? 'Early access · free' : business.plan === 'pro' ? 'Pro' : 'Free plan'}</span>
+              {business.plan === 'trial' && business.trial_ends_at && (
+                <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>Trial ends {new Date(business.trial_ends_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} — all features included</span>
+              )}
+            </div>
+          )}
           <form onSubmit={saveName} style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
             <div className="field" style={{ flex: 1 }}><label htmlFor="a-name">Display name</label>
               <input id="a-name" className="input" value={displayName} onChange={(e) => setDisplayName(e.target.value)} /></div>
@@ -232,8 +241,11 @@ export default function Settings() {
           </div>
           <div className="divider" />
           <div className="card-title" style={{ fontSize: 12, marginTop: 4 }}><span style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--rose)' }}><TriangleAlert size={14} /> Danger zone</span></div>
-          <p style={{ color: 'var(--muted)', fontSize: 11.5, marginTop: 0 }}>Wipes the database and reloads the demo business (Shivam General Store, 924 bills of sample history).</p>
-          <button className="btn btn-danger btn-sm" disabled={!isAdmin} onClick={() => setConfirmReset(true)}><RotateCcw size={13} /> Reset demo data</button>
+          <p style={{ color: 'var(--muted)', fontSize: 11.5, marginTop: 0 }}>Replace everything in <b>this workspace</b> — useful for demos and fresh starts. Your sign-in and business profile are kept.</p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button className="btn btn-ghost btn-sm" disabled={!isAdmin} onClick={() => setConfirmAction('sample')}><RotateCcw size={13} /> Load sample shop</button>
+            <button className="btn btn-danger btn-sm" disabled={!isAdmin} onClick={() => setConfirmAction('clear')}><Trash2 size={13} /> Clear all data</button>
+          </div>
         </div>
       </div>
 
@@ -247,13 +259,20 @@ export default function Settings() {
         <p style={{ color: 'var(--muted)', fontSize: 12.5 }}><b style={{ color: 'var(--rose)' }}>Everything current will be replaced</b> — bills, products, customers. Your sign-in sessions are cleared too. This cannot be undone.</p>
       </Modal>
 
-      {/* ============ reset confirm ============ */}
-      <Modal open={confirmReset} onClose={() => setConfirmReset(false)} title="Reset demo data?"
+      {/* ============ danger-zone confirm ============ */}
+      <Modal open={!!confirmAction} onClose={() => setConfirmAction(null)}
+        title={confirmAction === 'sample' ? 'Load the sample shop?' : 'Clear all workspace data?'}
         footer={<>
-          <button className="btn btn-ghost" onClick={() => setConfirmReset(false)}>Keep my data</button>
-          <button className="btn btn-danger" onClick={doReset} disabled={resetting}>{resetting ? <span className="spinner light" /> : <><RotateCcw size={14} /> Wipe & reseed</>}</button>
+          <button className="btn btn-ghost" onClick={() => setConfirmAction(null)}>Keep my data</button>
+          <button className="btn btn-danger" onClick={() => doAction(confirmAction, confirmAction === 'sample'
+            ? ['Sample shop loaded', '924 bills of sample history restored.']
+            : ['Workspace cleared', 'Every bill, product and customer was deleted.'])} disabled={resetting}>
+            {resetting ? <span className="spinner light" /> : confirmAction === 'sample' ? <><RotateCcw size={14} /> Wipe & load sample</> : <><Trash2 size={14} /> Delete everything</>}
+          </button>
         </>}>
-        <p style={{ color: 'var(--muted)', fontSize: 12.5 }}>All bills, products, customers and expenses will be deleted and replaced with the fresh demo dataset.</p>
+        <p style={{ color: 'var(--muted)', fontSize: 12.5 }}>{confirmAction === 'sample'
+          ? 'All current bills, products, customers, purchases and expenses in this workspace will be deleted and replaced with the lived-in sample dataset (Shivam General Store).'
+          : 'Every bill, product, customer, supplier, purchase, expense and stock movement in this workspace will be permanently deleted. Your business profile and logins stay.'}</p>
       </Modal>
     </div>
   );

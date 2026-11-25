@@ -97,7 +97,7 @@ export default function Purchases() {
       const created = await api('/purchases', {
         method: 'POST',
         body: {
-          supplier_id: supplierId ? Number(supplierId) : null,
+          supplier_id: supplierId || null,
           paid: paid === '' ? null : Number(paid),
           status, notes,
           items: validLines.map((l) => ({ product_id: l.product_id, qty: l.qty, cost: l.cost, tax_rate: l.tax_rate })),

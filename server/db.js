@@ -1,256 +1,305 @@
-// shopdesk — database layer (node:sqlite, zero native builds)
-import { DatabaseSync } from 'node:sqlite';
+// shopdesk — MongoDB data layer (mongoose, serverless-friendly)
+// Every tenant document carries `businessId`. Connections are cached across
+// serverless invocations via globalThis so warm functions reuse the pool.
+import mongoose from 'mongoose';
 import path from 'node:path';
-import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-export const ROOT = path.resolve(__dirname, '..');
-export const DATA_DIR = process.env.SHOPDESK_DATA || path.join(ROOT, 'data');
-const DB_PATH = process.env.SHOPDESK_DB || path.join(DATA_DIR, 'shopdesk.sqlite');
+export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-fs.mkdirSync(DATA_DIR, { recursive: true });
-
-export const db = new DatabaseSync(DB_PATH);
-
-db.exec('PRAGMA journal_mode = WAL');
-db.exec('PRAGMA foreign_keys = ON');
-
-db.exec(`
-CREATE TABLE IF NOT EXISTS counters (
-  key TEXT PRIMARY KEY,
-  value INTEGER NOT NULL DEFAULT 0
-);
-INSERT OR IGNORE INTO counters(key, value) VALUES ('invoice', 0), ('purchase', 0);
-
-CREATE TABLE IF NOT EXISTS users (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,
-  email TEXT NOT NULL UNIQUE,
-  password_hash TEXT NOT NULL,
-  role TEXT NOT NULL DEFAULT 'staff' CHECK(role IN ('admin','staff')),
-  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
-
-CREATE TABLE IF NOT EXISTS sessions (
-  token TEXT PRIMARY KEY,
-  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  expires_at TEXT NOT NULL,
-  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
-CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
-
-CREATE TABLE IF NOT EXISTS business (
-  id INTEGER PRIMARY KEY CHECK (id = 1),
-  name TEXT NOT NULL,
-  owner_name TEXT NOT NULL DEFAULT '',
-  email TEXT NOT NULL DEFAULT '',
-  phone TEXT NOT NULL DEFAULT '',
-  address TEXT NOT NULL DEFAULT '',
-  city TEXT NOT NULL DEFAULT '',
-  state TEXT NOT NULL DEFAULT '',
-  pincode TEXT NOT NULL DEFAULT '',
-  gstin TEXT NOT NULL DEFAULT '',
-  invoice_prefix TEXT NOT NULL DEFAULT 'INV',
-  purchase_prefix TEXT NOT NULL DEFAULT 'PUR',
-  upi_id TEXT NOT NULL DEFAULT '',
-  currency TEXT NOT NULL DEFAULT 'INR',
-  tax_inclusive INTEGER NOT NULL DEFAULT 0,
-  default_tax REAL NOT NULL DEFAULT 18,
-  footer_note TEXT NOT NULL DEFAULT 'Thank you for shopping with us! Visit again.',
-  terms TEXT NOT NULL DEFAULT ''
-);
-
-CREATE TABLE IF NOT EXISTS categories (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL UNIQUE,
-  color TEXT NOT NULL DEFAULT '#a3e635',
-  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
-
-CREATE TABLE IF NOT EXISTS products (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  sku TEXT NOT NULL UNIQUE,
-  barcode TEXT NOT NULL DEFAULT '',
-  name TEXT NOT NULL,
-  category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
-  unit TEXT NOT NULL DEFAULT 'pcs',
-  price REAL NOT NULL DEFAULT 0,
-  cost REAL NOT NULL DEFAULT 0,
-  tax_rate REAL NOT NULL DEFAULT 0,
-  stock REAL NOT NULL DEFAULT 0,
-  reorder_level REAL NOT NULL DEFAULT 0,
-  favorite INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
-CREATE INDEX IF NOT EXISTS idx_products_category ON products(category_id);
-CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
-
-CREATE TABLE IF NOT EXISTS customers (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,
-  phone TEXT NOT NULL DEFAULT '',
-  email TEXT NOT NULL DEFAULT '',
-  gstin TEXT NOT NULL DEFAULT '',
-  address TEXT NOT NULL DEFAULT '',
-  city TEXT NOT NULL DEFAULT '',
-  notes TEXT NOT NULL DEFAULT '',
-  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
-CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name);
-
-CREATE TABLE IF NOT EXISTS suppliers (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,
-  phone TEXT NOT NULL DEFAULT '',
-  email TEXT NOT NULL DEFAULT '',
-  gstin TEXT NOT NULL DEFAULT '',
-  address TEXT NOT NULL DEFAULT '',
-  city TEXT NOT NULL DEFAULT '',
-  notes TEXT NOT NULL DEFAULT '',
-  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
-
-CREATE TABLE IF NOT EXISTS invoices (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  invoice_no TEXT NOT NULL UNIQUE,
-  customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
-  customer_name TEXT NOT NULL DEFAULT 'Walk-in Customer',
-  is_interstate INTEGER NOT NULL DEFAULT 0,
-  date TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-  subtotal REAL NOT NULL DEFAULT 0,
-  discount REAL NOT NULL DEFAULT 0,
-  taxable REAL NOT NULL DEFAULT 0,
-  cgst REAL NOT NULL DEFAULT 0,
-  sgst REAL NOT NULL DEFAULT 0,
-  igst REAL NOT NULL DEFAULT 0,
-  tax_total REAL NOT NULL DEFAULT 0,
-  grand_total REAL NOT NULL DEFAULT 0,
-  paid REAL NOT NULL DEFAULT 0,
-  payment_method TEXT NOT NULL DEFAULT 'cash',
-  status TEXT NOT NULL DEFAULT 'paid' CHECK(status IN ('paid','partial','unpaid')),
-  notes TEXT NOT NULL DEFAULT '',
-  created_by TEXT NOT NULL DEFAULT '',
-  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
-CREATE INDEX IF NOT EXISTS idx_invoices_date ON invoices(date);
-CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
-CREATE INDEX IF NOT EXISTS idx_invoices_customer ON invoices(customer_id);
-
-CREATE TABLE IF NOT EXISTS invoice_items (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  invoice_id INTEGER NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
-  product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
-  name TEXT NOT NULL,
-  qty REAL NOT NULL,
-  price REAL NOT NULL,
-  discount REAL NOT NULL DEFAULT 0,
-  tax_rate REAL NOT NULL DEFAULT 0,
-  taxable REAL NOT NULL DEFAULT 0,
-  tax_amount REAL NOT NULL DEFAULT 0,
-  line_total REAL NOT NULL DEFAULT 0
-);
-CREATE INDEX IF NOT EXISTS idx_invoice_items_invoice ON invoice_items(invoice_id);
-CREATE INDEX IF NOT EXISTS idx_invoice_items_product ON invoice_items(product_id);
-
-CREATE TABLE IF NOT EXISTS payments (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  invoice_id INTEGER NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
-  amount REAL NOT NULL,
-  method TEXT NOT NULL DEFAULT 'cash',
-  note TEXT NOT NULL DEFAULT '',
-  date TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
-CREATE INDEX IF NOT EXISTS idx_payments_invoice ON payments(invoice_id);
-
-CREATE TABLE IF NOT EXISTS purchases (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  purchase_no TEXT NOT NULL UNIQUE,
-  supplier_id INTEGER REFERENCES suppliers(id) ON DELETE SET NULL,
-  supplier_name TEXT NOT NULL DEFAULT '',
-  date TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-  subtotal REAL NOT NULL DEFAULT 0,
-  tax_total REAL NOT NULL DEFAULT 0,
-  grand_total REAL NOT NULL DEFAULT 0,
-  paid REAL NOT NULL DEFAULT 0,
-  status TEXT NOT NULL DEFAULT 'received' CHECK(status IN ('received','pending')),
-  notes TEXT NOT NULL DEFAULT '',
-  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
-CREATE INDEX IF NOT EXISTS idx_purchases_date ON purchases(date);
-
-CREATE TABLE IF NOT EXISTS purchase_items (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  purchase_id INTEGER NOT NULL REFERENCES purchases(id) ON DELETE CASCADE,
-  product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
-  name TEXT NOT NULL,
-  qty REAL NOT NULL,
-  cost REAL NOT NULL,
-  tax_rate REAL NOT NULL DEFAULT 0,
-  taxable REAL NOT NULL DEFAULT 0,
-  tax_amount REAL NOT NULL DEFAULT 0,
-  line_total REAL NOT NULL DEFAULT 0
-);
-CREATE INDEX IF NOT EXISTS idx_purchase_items_purchase ON purchase_items(purchase_id);
-
-CREATE TABLE IF NOT EXISTS expenses (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  category TEXT NOT NULL DEFAULT 'Miscellaneous',
-  amount REAL NOT NULL,
-  date TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-  payment_method TEXT NOT NULL DEFAULT 'cash',
-  notes TEXT NOT NULL DEFAULT '',
-  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
-CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(date);
-
-CREATE TABLE IF NOT EXISTS stock_movements (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-  delta REAL NOT NULL,
-  reason TEXT NOT NULL,
-  ref TEXT NOT NULL DEFAULT '',
-  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-);
-CREATE INDEX IF NOT EXISTS idx_movements_product ON stock_movements(product_id);
-`);
-
-// ---- helpers -------------------------------------------------------------
-export const q = {
-  all: (sql, ...params) => db.prepare(sql).all(...params),
-  get: (sql, ...params) => db.prepare(sql).get(...params),
-  run: (sql, ...params) => db.prepare(sql).run(...params),
-};
-
-export function nextCounter(key) {
-  db.prepare('UPDATE counters SET value = value + 1 WHERE key = ?').run(key);
-  const row = db.prepare('SELECT value FROM counters WHERE key = ?').get(key);
-  return row.value;
+export function mongoUri() {
+  return process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/shopdesk';
 }
 
-export function transaction(fn) {
-  db.exec('BEGIN IMMEDIATE');
-  try {
-    const result = fn();
-    db.exec('COMMIT');
-    return result;
-  } catch (err) {
-    try { db.exec('ROLLBACK'); } catch { /* already rolled back */ }
-    throw err;
+// ---------- connection (cached for serverless) ----------
+const cached = globalThis.__shopdeskMongo || (globalThis.__shopdeskMongo = { conn: null, promise: null });
+
+export async function connectMongo() {
+  if (cached.conn && mongoose.connection.readyState === 1) return cached.conn;
+  if (!cached.promise) {
+    mongoose.set('strictQuery', true);
+    cached.promise = mongoose
+      .connect(mongoUri(), {
+        appName: 'shopdesk',
+        maxPoolSize: Number(process.env.MONGODB_MAX_POOL || 5),
+        serverSelectionTimeoutMS: 8000,
+        socketTimeoutMS: 45000,
+      })
+      .then((m) => m);
   }
+  cached.conn = await cached.promise;
+  if (!globalThis.__shopdeskIndexesDone) {
+    globalThis.__shopdeskIndexesDone = true;
+    ensureIndexes().catch((err) => console.warn('Index ensure failed (non-fatal):', err.message));
+  }
+  return cached.conn;
 }
 
-export function nowLocal() {
-  return fmtDateTime(new Date());
+export function disconnectMongo() {
+  cached.promise = null; cached.conn = null;
+  return mongoose.disconnect();
 }
+
+// ---------- base transform: expose stable string `id` ----------
+const baseTransform = (_doc, ret) => {
+  ret.id = String(ret._id);
+  delete ret._id;
+  delete ret.__v;
+  return ret;
+};
+const tenantSchema = (fields, options = {}) => {
+  const schema = new mongoose.Schema(
+    { businessId: { type: mongoose.Schema.Types.ObjectId, ref: 'Business', required: true, index: true }, ...fields },
+    { toJSON: { transform: baseTransform }, toObject: { transform: baseTransform }, versionKey: false, ...options }
+  );
+  return schema;
+};
+const oid = () => new mongoose.Types.ObjectId();
+const OID_RE = /^[a-f0-9]{24}$/i;
+export const isValidId = (s) => typeof s === 'string' && OID_RE.test(s);
+export const asId = (s) => new mongoose.Types.ObjectId(String(s));
+
+// ---------- models ----------
+const Business = mongoose.models.Business || mongoose.model('Business', new mongoose.Schema({
+  name: { type: String, required: true, trim: true, maxlength: 120 },
+  owner_name: { type: String, default: '', maxlength: 120 },
+  email: { type: String, default: '', maxlength: 120 },
+  phone: { type: String, default: '', maxlength: 30 },
+  address: { type: String, default: '', maxlength: 240 },
+  city: { type: String, default: '', maxlength: 80 },
+  state: { type: String, default: '', maxlength: 80 },
+  pincode: { type: String, default: '', maxlength: 12 },
+  gstin: { type: String, default: '', maxlength: 20 },
+  invoice_prefix: { type: String, default: 'INV', maxlength: 8 },
+  purchase_prefix: { type: String, default: 'PUR', maxlength: 8 },
+  upi_id: { type: String, default: '', maxlength: 60 },
+  currency: { type: String, default: 'INR', enum: ['INR', 'USD', 'EUR', 'GBP', 'AED', 'SGD'] },
+  tax_inclusive: { type: Number, default: 0 },
+  default_tax: { type: Number, default: 18 },
+  footer_note: { type: String, default: 'Thank you for shopping with us! Visit again.', maxlength: 300 },
+  terms: { type: String, default: '', maxlength: 300 },
+  plan: { type: String, default: 'trial', enum: ['trial', 'free', 'pro'] },
+  trial_ends_at: { type: Date, default: () => new Date(Date.now() + 14 * 86400 * 1000) },
+  is_demo: { type: Boolean, default: false },
+  created_at: { type: String, default: () => fmtDateTime(new Date()) },
+}, { toJSON: { transform: baseTransform }, toObject: { transform: baseTransform }, versionKey: false }));
+
+const User = mongoose.models.User || mongoose.model('User', new mongoose.Schema({
+  businessId: { type: mongoose.Schema.Types.ObjectId, ref: 'Business', required: true, index: true },
+  name: { type: String, required: true, trim: true, maxlength: 80 },
+  email: { type: String, required: true, lowercase: true, trim: true },
+  password_hash: { type: String, required: true },
+  role: { type: String, required: true, enum: ['admin', 'staff'], default: 'staff' },
+  created_at: { type: String, default: () => fmtDateTime(new Date()) },
+}, { toJSON: { transform: baseTransform }, toObject: { transform: baseTransform }, versionKey: false }));
+
+const Session = mongoose.models.Session || mongoose.model('Session', new mongoose.Schema({
+  token: { type: String, required: true, unique: true },
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+  businessId: { type: mongoose.Schema.Types.ObjectId, ref: 'Business', required: true, index: true },
+  expiresAt: { type: Date, required: true },
+  created_at: { type: String, default: () => fmtDateTime(new Date()) },
+}, { versionKey: false }));
+
+const Category = mongoose.models.Category || mongoose.model('Category', tenantSchema({
+  name: { type: String, required: true, trim: true, maxlength: 60 },
+  color: { type: String, default: '#a3e635', match: /^#[0-9a-fA-F]{6}$/ },
+  created_at: { type: String, default: () => fmtDateTime(new Date()) },
+}));
+
+const Product = mongoose.models.Product || mongoose.model('Product', tenantSchema({
+  sku: { type: String, required: true, trim: true, maxlength: 60 },
+  barcode: { type: String, default: '', maxlength: 64 },
+  name: { type: String, required: true, trim: true, maxlength: 200 },
+  category_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Category', default: null, index: true },
+  unit: { type: String, default: 'pcs', maxlength: 20 },
+  price: { type: Number, default: 0, min: 0 },
+  cost: { type: Number, default: 0, min: 0 },
+  tax_rate: { type: Number, default: 0, min: 0, max: 100 },
+  stock: { type: Number, default: 0 },
+  reorder_level: { type: Number, default: 0, min: 0 },
+  favorite: { type: Boolean, default: false },
+  created_at: { type: String, default: () => fmtDateTime(new Date()) },
+  updated_at: { type: String, default: () => fmtDateTime(new Date()) },
+}));
+
+const Customer = mongoose.models.Customer || mongoose.model('Customer', tenantSchema({
+  name: { type: String, required: true, trim: true, maxlength: 120 },
+  phone: { type: String, default: '', maxlength: 20 },
+  email: { type: String, default: '', maxlength: 120 },
+  gstin: { type: String, default: '', maxlength: 20 },
+  address: { type: String, default: '', maxlength: 240 },
+  city: { type: String, default: '', maxlength: 60 },
+  notes: { type: String, default: '', maxlength: 400 },
+  created_at: { type: String, default: () => fmtDateTime(new Date()) },
+}));
+
+const Supplier = mongoose.models.Supplier || mongoose.model('Supplier', tenantSchema({
+  name: { type: String, required: true, trim: true, maxlength: 120 },
+  phone: { type: String, default: '', maxlength: 20 },
+  email: { type: String, default: '', maxlength: 120 },
+  gstin: { type: String, default: '', maxlength: 20 },
+  address: { type: String, default: '', maxlength: 240 },
+  city: { type: String, default: '', maxlength: 60 },
+  notes: { type: String, default: '', maxlength: 400 },
+  created_at: { type: String, default: () => fmtDateTime(new Date()) },
+}));
+
+const Invoice = mongoose.models.Invoice || mongoose.model('Invoice', tenantSchema({
+  invoice_no: { type: String, required: true },
+  customer_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', default: null, index: true },
+  customer_name: { type: String, default: 'Walk-in Customer', maxlength: 120 },
+  is_interstate: { type: Boolean, default: false },
+  date: { type: String, required: true, index: true },
+  subtotal: { type: Number, default: 0 },
+  discount: { type: Number, default: 0 },
+  taxable: { type: Number, default: 0 },
+  cgst: { type: Number, default: 0 },
+  sgst: { type: Number, default: 0 },
+  igst: { type: Number, default: 0 },
+  tax_total: { type: Number, default: 0 },
+  grand_total: { type: Number, default: 0 },
+  paid: { type: Number, default: 0 },
+  payment_method: { type: String, default: 'cash', enum: ['cash', 'upi', 'card', 'bank', 'credit'] },
+  status: { type: String, default: 'paid', enum: ['paid', 'partial', 'unpaid'], index: true },
+  notes: { type: String, default: '', maxlength: 500 },
+  created_by: { type: String, default: '', maxlength: 80 },
+  created_at: { type: String, default: () => fmtDateTime(new Date()) },
+}));
+
+const InvoiceItem = mongoose.models.InvoiceItem || mongoose.model('InvoiceItem', tenantSchema({
+  invoice_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Invoice', required: true, index: true },
+  product_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', default: null, index: true },
+  name: { type: String, required: true, maxlength: 200 },
+  qty: { type: Number, required: true },
+  price: { type: Number, required: true },
+  cost: { type: Number, default: 0 },          // unit cost snapshot at sale time (profit math)
+  discount: { type: Number, default: 0 },
+  tax_rate: { type: Number, default: 0 },
+  taxable: { type: Number, default: 0 },
+  tax_amount: { type: Number, default: 0 },
+  line_total: { type: Number, default: 0 },
+  date: { type: String, default: '', index: true },
+}));
+
+const Payment = mongoose.models.Payment || mongoose.model('Payment', tenantSchema({
+  invoice_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Invoice', required: true, index: true },
+  amount: { type: Number, required: true },
+  method: { type: String, default: 'cash' },
+  note: { type: String, default: '', maxlength: 200 },
+  date: { type: String, default: () => fmtDateTime(new Date()) },
+}));
+
+const Purchase = mongoose.models.Purchase || mongoose.model('Purchase', tenantSchema({
+  purchase_no: { type: String, required: true },
+  supplier_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Supplier', default: null },
+  supplier_name: { type: String, default: '', maxlength: 120 },
+  date: { type: String, required: true, index: true },
+  subtotal: { type: Number, default: 0 },
+  tax_total: { type: Number, default: 0 },
+  grand_total: { type: Number, default: 0 },
+  paid: { type: Number, default: 0 },
+  status: { type: String, default: 'received', enum: ['received', 'pending'] },
+  notes: { type: String, default: '', maxlength: 500 },
+  created_at: { type: String, default: () => fmtDateTime(new Date()) },
+}));
+
+const PurchaseItem = mongoose.models.PurchaseItem || mongoose.model('PurchaseItem', tenantSchema({
+  purchase_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Purchase', required: true, index: true },
+  product_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', default: null },
+  name: { type: String, required: true, maxlength: 200 },
+  qty: { type: Number, required: true },
+  cost: { type: Number, required: true },
+  tax_rate: { type: Number, default: 0 },
+  taxable: { type: Number, default: 0 },
+  tax_amount: { type: Number, default: 0 },
+  line_total: { type: Number, default: 0 },
+}));
+
+const Expense = mongoose.models.Expense || mongoose.model('Expense', tenantSchema({
+  category: { type: String, default: 'Miscellaneous', maxlength: 80 },
+  amount: { type: Number, required: true },
+  date: { type: String, required: true, index: true },
+  payment_method: { type: String, default: 'cash' },
+  notes: { type: String, default: '', maxlength: 300 },
+  created_at: { type: String, default: () => fmtDateTime(new Date()) },
+}));
+
+const StockMovement = mongoose.models.StockMovement || mongoose.model('StockMovement', tenantSchema({
+  product_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true, index: true },
+  delta: { type: Number, required: true },
+  reason: { type: String, required: true, maxlength: 40 },
+  ref: { type: String, default: '', maxlength: 80 },
+  created_at: { type: String, default: () => fmtDateTime(new Date()) },
+}));
+
+const Counter = mongoose.models.Counter || mongoose.model('Counter', tenantSchema({
+  key: { type: String, required: true },
+  value: { type: Number, default: 0 },
+}));
+
+export const models = { Business, User, Session, Category, Product, Customer, Supplier, Invoice, InvoiceItem, Payment, Purchase, PurchaseItem, Expense, StockMovement, Counter };
+
+export async function ensureIndexes() {
+  await Promise.all([
+    User.collection.createIndex({ email: 1 }, { unique: true }),
+    Session.collection.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+    Session.collection.createIndex({ userId: 1 }),
+    Category.collection.createIndex({ businessId: 1, name: 1 }, { unique: true }),
+    Product.collection.createIndex({ businessId: 1, sku: 1 }, { unique: true }),
+    Product.collection.createIndex({ businessId: 1, name: 1 }),
+    Product.collection.createIndex({ businessId: 1, stock: 1 }),
+    Customer.collection.createIndex({ businessId: 1, name: 1 }),
+    Supplier.collection.createIndex({ businessId: 1, name: 1 }),
+    Invoice.collection.createIndex({ businessId: 1, invoice_no: 1 }, { unique: true }),
+    Invoice.collection.createIndex({ businessId: 1, date: -1 }),
+    Invoice.collection.createIndex({ businessId: 1, status: 1 }),
+    InvoiceItem.collection.createIndex({ businessId: 1, invoice_id: 1 }),
+    InvoiceItem.collection.createIndex({ businessId: 1, product_id: 1 }),
+    Payment.collection.createIndex({ businessId: 1, invoice_id: 1 }),
+    Purchase.collection.createIndex({ businessId: 1, purchase_no: 1 }, { unique: true }),
+    Purchase.collection.createIndex({ businessId: 1, date: -1 }),
+    PurchaseItem.collection.createIndex({ businessId: 1, purchase_id: 1 }),
+    Expense.collection.createIndex({ businessId: 1, date: -1 }),
+    StockMovement.collection.createIndex({ businessId: 1, product_id: 1, created_at: -1 }),
+    Counter.collection.createIndex({ businessId: 1, key: 1 }, { unique: true }),
+  ]);
+}
+
+// ---------- helpers ----------
+export const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
 export function fmtDateTime(d) {
   const p = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
+export const nowLocal = () => fmtDateTime(new Date());
+export const isoDate = (d = new Date()) => fmtDateTime(d).slice(0, 10);
 
-export function isEmpty() {
-  const row = q.get('SELECT COUNT(*) AS n FROM users');
-  return Number(row.n) === 0;
+export async function nextCounter(businessId, key) {
+  const doc = await Counter.findOneAndUpdate(
+    { businessId, key },
+    { $inc: { value: 1 } },
+    { new: true, upsert: true, setDefaultsOnInsert: true }
+  );
+  return doc.value;
 }
+
+/** Inclusive-exclusive string bounds for a YYYY-MM-DD day. */
+export function dayRange(isoDay) {
+  const start = `${isoDay} 00:00:00`;
+  const d = new Date(`${isoDay}T00:00:00`);
+  d.setDate(d.getDate() + 1);
+  const p = (n) => String(n).padStart(2, '0');
+  const end = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} 00:00:00`;
+  return { start, end };
+}
+
+/** Inclusive bounds covering [from, to] whole days for lexicographic string dates. */
+export function rangeBounds(from, to) {
+  const start = `${from} 00:00:00`;
+  const end = `${to} 23:59:59.999`;
+  return { start, end };
+}
+
+export { Counter };

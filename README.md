@@ -1,64 +1,105 @@
 # shopdesk
 
-**Every business. One desk.**
+**Every business. One desk. Now on the web.**
 
-shopdesk is a full-stack inventory + billing suite for **every kind of business** — kirana stores, pharmacies, electronics shops, bakeries, boutiques, cafes, hardware and wholesale. It ships with GST tax invoices, barcode-fast POS billing, live stock control, udhaar (credit) tracking, expenses, purchases, and accountant-ready reports — all wrapped in a dark, animated, keyboard-first interface.
+shopdesk is a cloud billing + inventory suite for **every kind of business** — kirana stores, pharmacies, electronics shops, bakeries, boutiques, cafes, hardware and wholesale. Full GST tax invoicing, barcode-fast POS, live stock control, udhaar (credit) khata, expense bookkeeping and accountant-ready reports — multi-tenant, signup in a minute, hosted anywhere Node runs.
 
-It boots with a **lived-in demo business** (Shivam General Store, Mathura — 924 sample GST bills across 75 days, 60 products, categories, suppliers, expenses and two demo logins), so the app feels alive the moment it opens.
+This is the **v3.0 SaaS edition**: MongoDB + Vercel serverless, one click from this repo to a live deployment. It ships with a fully lived-in **demo workspace** (Shivam General Store — 924 sample GST bills across 75 days) so you can explore a working shop instead of an empty shell.
 
 ---
 
-## Quick start
+## Live tour (demo login)
 
-```bash
-npm install        # requires Node ≥ 22.5 (uses the built-in node:sqlite — zero native builds)
-npm run build      # build the SPA into dist/
-npm start          # http://localhost:8787  → API + app on one port
-```
-
-For development with hot reload:
-
-```bash
-npm run dev        # API on :8787  (auto-seeds the demo DB on first run)
-npm run build      # and in another shell, serve dist/ via the same server,
-                   # or `npx vite dev` for HMR with /api proxied to :8787
-```
-
-**Demo logins** (also shown on the sign-in screen):
-
-| Role  | Email               | Password   |
-|-------|---------------------|------------|
+| Role  | Email                 | Password   |
+|-------|-----------------------|------------|
 | Owner | `aarav@shopdesk.demo` | `demo1234` |
 | Staff | `riya@shopdesk.demo`  | `demo1234` |
 
-Reset the demo data any time from **Settings → Danger zone → Reset demo data** (admin).
+Sign in with either, or hit **Create workspace** on the same screen to open your own empty (or sample-data) shop in about a minute.
+
+---
+
+## Deploy to Vercel (5 minutes)
+
+**1. Create a free MongoDB Atlas cluster** — [cloud.mongodb.com](https://cloud.mongodb.com) → free M0 tier → create a database user → get the connection string. In **Network Access**, allow `0.0.0.0/0` (Vercel's serverless IPs are dynamic), or use Vercel's private networking if you're on Enterprise.
+
+```
+mongodb+srv://<user>:<password>@<cluster>.mongodb.net/shopdesk?retryWrites=true&w=majority
+```
+
+**2. Import this repo into Vercel** — [vercel.com/new](https://vercel.com/new) → pick the repo. Vercel detects Vite automatically; `vercel.json` already wires the SPA fallback and the serverless API.
+
+**3. Add one environment variable** in the Vercel project → Settings → Environment Variables:
+
+| Name          | Value                         |
+|---------------|-------------------------------|
+| `MONGODB_URI` | your Atlas connection string  |
+
+**4. Deploy.** That's it. `npm run build` builds the SPA; `api/[...slug].js` serves every `/api/*` request as a function; `dist/` is served statically.
+
+**5. Seed the demo workspace (optional).** From your machine, point the repo at Atlas and run:
+
+```bash
+MONGODB_URI="mongodb+srv://..." npm install
+MONGODB_URI="mongodb+srv://..." npm run seed
+```
+
+You now have a `Shivam General Store` demo workspace with the sample history, plus a fresh workspace waiting for you behind the signup form.
+
+> Self-hosting instead? Skip Vercel entirely — see **Run it yourself** below.
+
+---
+
+## Run it yourself (no Vercel)
+
+You need Node ≥ 20 and any MongoDB 5+ (local `mongod`, Docker, or Atlas).
+
+### Option A — Docker (the easy button)
+
+```bash
+docker compose up --build
+# app on http://localhost:8787 — mongo + demo seed are handled for you
+```
+
+### Option B — plain Node
+
+```bash
+npm install
+echo 'MONGODB_URI=mongodb://127.0.0.1:27017/shopdesk' > .env
+npm run seed     # creates the demo workspace
+npm run build
+npm start        # http://localhost:8787
+```
+
+For frontend development with HMR: `npm run dev` (API on :8787) + `npm run dev:client` (Vite on :5173, proxies `/api`).
 
 ---
 
 ## What's inside
 
 ### Sell
-- **Billing counter (POS)** — scan/search products, category chips, live cart with qty controls, per-line discounts, auto CGST/SGST or interstate IGST, bill-level discount, **cash-tender change calculator**, UPI/card/bank/credit (udhaar) payment modes, quick-add customer inline. F2 focuses search, Ctrl+Enter completes the sale.
-- **Bills & Invoices** — filter by status/date/search, pagination, view, **record payments** against partial/unpaid bills, delete (admin, restores stock), **CSV export**, printable **GST tax invoice** with amount-in-words and a **live UPI QR**.
+- **Billing counter (POS)** — scan/search, category chips, cart with qty controls and per-line discounts, auto CGST/SGST or interstate IGST, bill-level discount, **cash-tender change calculator**, UPI/card/bank/udhaar modes, inline customer quick-add. F2 focuses search, Ctrl+Enter completes the sale.
+- **Bills & Invoices** — filters, pagination, payment recording, CSV export, printable **GST tax invoice** (amount in words, live UPI QR).
 
 ### Stock
-- **Products** — full CRUD with SKU, barcode (one-click random generator), categories (with colors), units, GST rate slabs, cost & margin %, reorder levels, favorites, **low/out-of-stock alerts**, one-click **+25 quick restock** from the dashboard, **stock adjustment** with reasons, **stock movement history** (opening / sale / purchase / adjustment), and per-product delete protection once used in a saved bill.
-- **Purchases** — multi-line stock-in with supplier selection; quantities land in stock and cost price updates automatically; delete reverses stock (admin).
+- **Products** — SKU/barcode (one-click generator), categories with colors, GST slabs, cost & margin, reorder levels, favorites, low/out alerts, **one-click +25 restock**, stock adjustment with reasons, full **movement ledger**, delete protection for billed products.
+- **Purchases** — multi-line stock-in, supplier selection, cost price updates, stock lands automatically; delete reverses it.
 
 ### People
-- **Customers (khata)** — GSTIN-aware contacts, lifetime value, bill count, outstanding udhaar, last visit, slide-in detail drawer with recent bills, "Bill now" deep-link into the POS with the customer preselected.
-- **Suppliers** — vendor book with purchase counts and all-time purchase value, GSTIN tracking for input tax credit.
+- **Customers (khata)** — GSTIN-aware, lifetime value, outstanding udhaar, visit history, slide-in drawer, "Bill now" deep-link.
+- **Suppliers** — vendor book with purchase counts and all-time value.
 
 ### Money
-- **Expenses** — month-navigable ledger with category filters and a where-the-money-went breakdown.
-- **Reports & GST** — Today / 7D / 30D / 90D / FY-26-27 or custom range; revenue, bills, avg bill, items sold, tax collected, gross & net profit (expenses netted out), daily revenue curve, payment-mix donut, top products, revenue by category, and a **CGST/SGST-wise GST summary table** ready for your CA. CSV export for any range.
+- **Expenses** — month ledger with categories and breakdown.
+- **Reports & GST** — Today/7D/30D/90D/FY 26–27/custom ranges, revenue/bills/avg-bill/items/tax KPIs with previous-period delta, daily revenue curve, payment-mix donut, top products, revenue by category, **CGST/SGST-wise GST summary**, CSV export.
 
-### Everywhere
-- **⌘K / Ctrl+K command palette** — jump anywhere, search products/customers/bills, quick actions.
-- **Dashboard** — animated KPIs (today vs yesterday, month vs last month, udhaar, low stock), 30-day revenue chart with hover tooltip, live bills ticker, one-tap restock.
-- **Auth** — scrypt-hashed passwords, httpOnly session cookies (30 days), owner/staff roles, per-route protection, login rate-limiting.
-- **Backup & restore** — one-click JSON export of every table; restore on any machine; portable demo reset.
-- **The vibe** — aurora gradient field, grain, floating receipt on the login hero, word-rotating business types (kirana → pharmacy → bakery…), animated KPIs, spring modals/toasts/drawer, confetti on every completed sale, and full keyboard navigation.
+### Platform (the SaaS part)
+- **Multi-tenant workspaces** — every signup gets an isolated shop; all queries are scoped by `businessId` with compound unique indexes, so SKUs and bill numbers can repeat across tenants.
+- **Signup & auth** — business + owner created in one step, optional **sample-data seeding** (924 bills) so the workspace feels alive instantly. Scrypt password hashing, httpOnly session cookies (30-day TTL index), owner/staff roles, rate-limited login.
+- **Backup & restore** — one-click JSON export of the whole workspace; restore replaces only your workspace. v3 format (Mongo); the old SQLite-era v2 backups are rejected with a clear message.
+- **Workspace lifecycle** — admin-only: **Load sample shop** (wipe + reseed demo data in your workspace) and **Clear all data** (fresh start, keeps logins & profile). Perfect for demos and hand-overs.
+- **Plans** — every workspace starts on `trial` (14 days, all features, no card). Plan badge lives in Settings → Your account. (Billing is intentionally not faked — wire Stripe before charging anyone.)
+- **The vibe** — aurora gradient field, film grain, floating receipt on the sign-in hero, word-rotating business types, animated KPIs, spring modals/toasts, confetti on every completed sale, ⌘K/Ctrl+K palette.
 
 ---
 
@@ -67,61 +108,78 @@ Reset the demo data any time from **Settings → Danger zone → Reset demo data
 | Layer     | Choice |
 |-----------|--------|
 | Frontend  | React 19, React Router 7, framer-motion, lucide-react, hand-rolled SVG charts & CSS design system |
-| Backend   | Express 5 (ESM), zod validation, scrypt auth |
-| Storage   | SQLite via the built-in `node:sqlite` (`data/shopdesk.sqlite`) — **zero native dependencies**, WAL mode, transactional integrity for stock/bills |
-| Tests     | `node --test` DB/seed invariants + a jsdom-based browser-less smoke test that renders every route against the real API |
+| Backend   | Express 5 (ESM), zod validation — **same app** locally, in Docker, and as a Vercel function |
+| Storage   | MongoDB via Mongoose 8 — per-tenant documents, string `id` exposed everywhere, atomic counters for bill/purchase numbers, TTL sessions, stock guarded by atomic `$inc` with compensation |
+| Hosting   | Vercel (static SPA + serverless API) or anywhere Node ≥ 20 runs (`Dockerfile`, `docker-compose.yml`) |
+| Tests     | `node --test` — billing math unit tests + API route-table/auth tests (no DB) · `tests/smoke.mjs` renders every route in jsdom against a live server |
 
 ### Scripts
 
 ```bash
-npm run dev         # API server (serves dist/ if built)
-npm run build       # production SPA build
-npm start           # production mode
-npm run seed        # wipe & reseed the demo business
-npm test            # DB + seed invariant tests (temp database)
-npm run test:smoke  # render every route in jsdom against a running server
+npm run dev           # API server (+ serves dist/ if built), .env auto-loaded
+npm run dev:client    # Vite HMR on :5173, proxies /api → :8787
+npm run build         # production SPA build → dist/
+npm start             # serve API + SPA on :8787
+npm run seed          # create/refresh the shared demo workspace
+npm test              # unit + API-surface tests (no database required)
+npm run test:smoke    # render every route against a running server (needs MONGODB_URI + npm run seed)
 ```
 
-### Data model (SQLite)
+### Environment variables
 
-`business` (single-row profile) · `users` + `sessions` · `categories` · `products` · `customers` · `suppliers` · `invoices` + `invoice_items` + `payments` · `purchases` + `purchase_items` · `expenses` · `stock_movements` (audit ledger) · `counters` (invoice/purchase numbering).
-
-Billing math is computed **server-side** in a single transaction: stock is validated and decremented, invoice + items + payment + stock movements are written atomically, and failures roll back cleanly.
+| Name              | Required | Default                            | Purpose |
+|-------------------|----------|------------------------------------|---------|
+| `MONGODB_URI`     | yes (prod) | `mongodb://127.0.0.1:27017/shopdesk` | MongoDB connection string |
+| `MONGODB_MAX_POOL`| no       | `5`                                | pool size per serverless instance |
+| `PORT`            | no       | `8787`                             | local/self-host port |
 
 ### API sketch
 
 ```
-POST /api/auth/login|logout · GET /api/auth/me · PUT /api/auth/profile · POST /api/auth/change-password
-GET  /api/dashboard
-CRUD /api/products · POST /api/products/:id/adjust-stock · GET /api/products/:id/movements
-CRUD /api/categories · CRUD /api/customers · GET /api/customers/:id (stats + recent bills) · CRUD /api/suppliers
-GET  /api/invoices · GET /api/invoices/:id · POST /api/invoices · POST /api/invoices/:id/payments · DELETE /api/invoices/:id
-GET  /api/purchases · GET /api/purchases/:id · POST /api/purchases · DELETE /api/purchases/:id
-CRUD /api/expenses · GET /api/reports/summary?from&to · GET /api/reports/export?from&to (CSV)
-GET/PUT /api/settings · GET /api/backup · POST /api/restore · POST /api/reset-demo
-GET  /api/search?q=… (⌘K) · GET /api/pay-qr?amount&note (UPI QR for the printed bill)
+POST /api/auth/signup · POST /api/auth/login · POST /api/auth/logout · GET /api/auth/me
+PUT  /api/auth/profile · POST /api/auth/change-password
+GET  /api/dashboard · GET /api/health
+CRUD /api/products (+ /:id/adjust-stock · /:id/movements) · CRUD /api/categories
+CRUD /api/customers · GET /api/customers/:id (stats + recent bills) · CRUD /api/suppliers
+GET  /api/invoices · POST /api/invoices · POST /api/invoices/:id/payments · DELETE /api/invoices/:id
+GET  /api/purchases (+ POST · /:id · DELETE /:id) · CRUD /api/expenses
+GET  /api/reports/summary · GET /api/reports/export (CSV)
+GET  /api/settings · PUT /api/settings · POST /api/settings/load-sample · POST /api/settings/clear-data
+GET  /api/backup · POST /api/restore · GET /api/search (⌘K) · GET /api/pay-qr (UPI QR)
 ```
 
-### Docker
+### Backup format
 
-```bash
-docker build -t shopdesk .
-docker run -p 8787:8787 -v shopdesk-data:/app/data shopdesk
+`GET /api/backup` → `{ app: 'shopdesk', version: 3, exported_at, data: { business, users, categories, … } }`. The file contains password hashes — treat it like a secret. v2 (SQLite-era) backups are rejected explicitly.
+
+### Project layout
+
+```
+api/[...slug].js   Vercel serverless entry (wraps the Express app, cached Mongo connection)
+server/            app.js (routes) · index.js (self-hosted entry) · db.js (models) · auth.js · seed.js · billing.js
+src/               React SPA (store, api client, pages, components, design system)
+scripts/seed-demo.js  create/refresh the demo workspace
+tests/             billing unit tests · API surface tests · jsdom smoke runner
+vercel.json        framework config + SPA fallback   ·   Dockerfile · docker-compose.yml
 ```
 
-The image builds the SPA, installs production deps only, runs as non-root, and persists the database in `/app/data`.
+### Operational notes & honest caveats
+
+- **Concurrency**: stock decrement is guarded atomically at the database level; a failed sale restores reservations automatically. Bill numbering uses an atomic per-workspace counter. Multi-document transactions (Atlas replica sets) are not required.
+- **Serverless cold starts**: first hit after idle may take ~1s while the Mongo pool warms; warm invocations reuse the cached connection.
+- **Single database, shared collections**: tenants are isolated by `businessId`, not by database. For strict isolation per customer, migrate to Atlas workloads-with-tenant-identifiers or separate clusters.
+- **Money & dates**: stored as `Number` (₹ up to 2^53 — fine) and `YYYY-MM-DD HH:MM:SS` strings (lexicographically comparable, matches GST invoicing needs).
+- **No billing/payment collection is wired** — the trial badge is informational. Add Stripe Checkout when you're ready to charge; the `plan` field is already on the business document.
+- Google Fonts load from the CDN in production; they degrade gracefully offline.
 
 ---
 
-## Project layout
+## Roadmap
 
-```
-server/    index.js (API + static host) · db.js (schema) · auth.js · seed.js (demo data)
-src/       App.jsx (router) · store.jsx (session/business context) · api.js · styles.css (design system)
-           components/ (Layout, CommandPalette, ui.jsx — toasts/modals/charts/KPIs)
-           pages/ (Login, Dashboard, Billing, Invoices, Products, Purchases,
-                   Customers, Suppliers, Expenses, Reports, Settings, PrintInvoice)
-tests/     inventory.test.js · smoke.mjs
-```
+- Stripe billing + plan enforcement hooks
+- Team management (invite staff, per-role permissions matrix)
+- Zoho Books / Tally export adapter
+- WhatsApp bill sharing
+- Offline-first PWA mode for billing counters
 
-shopdesk v2.0 — built for Indian retail, ready for everywhere.
+shopdesk v3.0 — the whole shop on one desk, hosted anywhere.

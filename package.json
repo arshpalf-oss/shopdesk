@@ -1,14 +1,15 @@
 {
   "name": "shopdesk",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "private": true,
   "type": "module",
-  "description": "shopdesk — Inventory, billing, POS and business analytics for every business. One desk for the whole shop.",
+  "description": "shopdesk — Cloud inventory, billing & POS for every business. Sign up, open your counter from anywhere: GST invoices, live stock, udhaar khata, reports. Self-host on Vercel + MongoDB Atlas.",
   "scripts": {
-    "dev": "node server/index.js",
+    "dev": "node --env-file-if-exists=.env server/index.js",
+    "dev:client": "vite",
     "build": "vite build",
-    "start": "NODE_ENV=production node server/index.js",
-    "seed": "node server/seed.js",
+    "start": "node server/index.js",
+    "seed": "node scripts/seed-demo.js",
     "test": "node --test tests/*.test.js",
     "test:smoke": "node tests/smoke.mjs"
   },
@@ -17,6 +18,7 @@
     "express": "5.3.0",
     "framer-motion": "11.18.2",
     "lucide-react": "1.61.0",
+    "mongoose": "^8.24.11",
     "qrcode": "1.5.4",
     "react": "19.3.1",
     "react-dom": "19.3.1",
@@ -29,6 +31,6 @@
     "vite": "6.4.5"
   },
   "engines": {
-    "node": ">=22.5.0"
+    "node": ">=20.0.0"
   }
 }

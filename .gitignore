@@ -8,3 +8,5 @@ data/*.sqlite-shm
 *.log
 .env
 tests/.bundle.cjs
+.vercel
+.env*.local

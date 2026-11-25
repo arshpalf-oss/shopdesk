@@ -72,7 +72,7 @@ export default function Products() {
     setSaving(true);
     const payload = {
       ...form,
-      category_id: form.category_id === '' ? null : Number(form.category_id),
+      category_id: form.category_id || null,
       price: Number(form.price) || 0,
       cost: Number(form.cost) || 0,
       stock: Number(form.stock) || 0,
