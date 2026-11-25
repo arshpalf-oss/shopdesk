@@ -1,23 +1,17 @@
-import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+
 export default defineConfig({
   plugins: [react()],
   server: {
-    host: "0.0.0.0",
+    host: '0.0.0.0',
+    port: 5173,
     allowedHosts: true,
-    fs: {
-      deny: [
-        "**/.env",
-        "**/.env.*",
-        "**/.git/**",
-        "**/data/**",
-        "**/server/**",
-        "**/tests/**",
-        "**/qa/**",
-        "**/*.sqlite",
-        "**/*.sqlite-*",
-      ],
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:8787',
+        changeOrigin: true,
+      },
     },
   },
-  build: { chunkSizeWarningLimit: 700 },
 });

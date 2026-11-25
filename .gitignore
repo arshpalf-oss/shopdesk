@@ -1,6 +1,10 @@
-node_modules/
-dist/
-qa/
-data/*.sqlite*
-.env*
+node_modules
+dist
+data/*.sqlite
+data/*.sqlite-journal
+data/*.sqlite-wal
+data/*.sqlite-shm
+.DS_Store
 *.log
+.env
+tests/.bundle.cjs

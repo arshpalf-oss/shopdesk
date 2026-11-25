@@ -1,96 +1,256 @@
-import Database from "better-sqlite3";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-export const dbPath =
-  process.env.DB_PATH || path.join(root, "data", "shop-desk.sqlite");
-fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-export const db = new Database(dbPath);
-// The database contains client information and credential hashes.
-if (process.platform !== "win32") fs.chmodSync(dbPath, 0o600);
-db.pragma("journal_mode = WAL");
-db.pragma("foreign_keys = ON");
-db.pragma("busy_timeout = 5000");
+// shopdesk — database layer (node:sqlite, zero native builds)
+import { DatabaseSync } from 'node:sqlite';
+import path from 'node:path';
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+export const ROOT = path.resolve(__dirname, '..');
+export const DATA_DIR = process.env.SHOPDESK_DATA || path.join(ROOT, 'data');
+const DB_PATH = process.env.SHOPDESK_DB || path.join(DATA_DIR, 'shopdesk.sqlite');
+
+fs.mkdirSync(DATA_DIR, { recursive: true });
+
+export const db = new DatabaseSync(DB_PATH);
+
+db.exec('PRAGMA journal_mode = WAL');
+db.exec('PRAGMA foreign_keys = ON');
+
 db.exec(`
-CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, expires INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS counters (
+  key TEXT PRIMARY KEY,
+  value INTEGER NOT NULL DEFAULT 0
+);
+INSERT OR IGNORE INTO counters(key, value) VALUES ('invoice', 0), ('purchase', 0);
+
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  email TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'staff' CHECK(role IN ('admin','staff')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  token TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+
+CREATE TABLE IF NOT EXISTS business (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  name TEXT NOT NULL,
+  owner_name TEXT NOT NULL DEFAULT '',
+  email TEXT NOT NULL DEFAULT '',
+  phone TEXT NOT NULL DEFAULT '',
+  address TEXT NOT NULL DEFAULT '',
+  city TEXT NOT NULL DEFAULT '',
+  state TEXT NOT NULL DEFAULT '',
+  pincode TEXT NOT NULL DEFAULT '',
+  gstin TEXT NOT NULL DEFAULT '',
+  invoice_prefix TEXT NOT NULL DEFAULT 'INV',
+  purchase_prefix TEXT NOT NULL DEFAULT 'PUR',
+  upi_id TEXT NOT NULL DEFAULT '',
+  currency TEXT NOT NULL DEFAULT 'INR',
+  tax_inclusive INTEGER NOT NULL DEFAULT 0,
+  default_tax REAL NOT NULL DEFAULT 18,
+  footer_note TEXT NOT NULL DEFAULT 'Thank you for shopping with us! Visit again.',
+  terms TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS categories (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  color TEXT NOT NULL DEFAULT '#a3e635',
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
 CREATE TABLE IF NOT EXISTS products (
- id TEXT PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL, category TEXT NOT NULL, hsn TEXT NOT NULL,
- unit TEXT NOT NULL, sale_price INTEGER NOT NULL, cost_price INTEGER NOT NULL, gst_rate REAL NOT NULL,
- tax_treatment TEXT NOT NULL, sku TEXT NOT NULL DEFAULT '', barcode TEXT NOT NULL DEFAULT '',
- low_stock REAL NOT NULL DEFAULT 5, active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  sku TEXT NOT NULL UNIQUE,
+  barcode TEXT NOT NULL DEFAULT '',
+  name TEXT NOT NULL,
+  category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+  unit TEXT NOT NULL DEFAULT 'pcs',
+  price REAL NOT NULL DEFAULT 0,
+  cost REAL NOT NULL DEFAULT 0,
+  tax_rate REAL NOT NULL DEFAULT 0,
+  stock REAL NOT NULL DEFAULT 0,
+  reorder_level REAL NOT NULL DEFAULT 0,
+  favorite INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
-CREATE UNIQUE INDEX IF NOT EXISTS unique_product_sku ON products(sku) WHERE sku != '';
-CREATE UNIQUE INDEX IF NOT EXISTS unique_product_barcode ON products(barcode) WHERE barcode != '';
-CREATE TABLE IF NOT EXISTS clients (id TEXT PRIMARY KEY, name TEXT NOT NULL, phone TEXT NOT NULL DEFAULT '', email TEXT NOT NULL DEFAULT '', address TEXT NOT NULL DEFAULT '', state TEXT NOT NULL, gstin TEXT NOT NULL DEFAULT '', notes TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS pets (id TEXT PRIMARY KEY, client_id TEXT NOT NULL REFERENCES clients(id), name TEXT NOT NULL, species TEXT NOT NULL, breed TEXT NOT NULL DEFAULT '', sex TEXT NOT NULL DEFAULT '', dob TEXT NOT NULL DEFAULT '', notes TEXT NOT NULL DEFAULT '');
-CREATE TABLE IF NOT EXISTS suppliers (id TEXT PRIMARY KEY, name TEXT NOT NULL, phone TEXT NOT NULL DEFAULT '', email TEXT NOT NULL DEFAULT '', address TEXT NOT NULL DEFAULT '', gstin TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS purchases (id TEXT PRIMARY KEY, supplier_id TEXT NOT NULL REFERENCES suppliers(id), invoice_no TEXT NOT NULL, date TEXT NOT NULL, notes TEXT NOT NULL DEFAULT '', lines TEXT NOT NULL, subtotal INTEGER NOT NULL, tax INTEGER NOT NULL, total INTEGER NOT NULL, created_at TEXT NOT NULL);
-CREATE UNIQUE INDEX IF NOT EXISTS unique_supplier_bill ON purchases(supplier_id,invoice_no);
-CREATE TABLE IF NOT EXISTS batches (id TEXT PRIMARY KEY, product_id TEXT NOT NULL REFERENCES products(id), batch_no TEXT NOT NULL DEFAULT '', expiry TEXT NOT NULL DEFAULT '', qty REAL NOT NULL, cost_price INTEGER NOT NULL, purchase_id TEXT REFERENCES purchases(id), created_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_products_category ON products(category_id);
+CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
+
+CREATE TABLE IF NOT EXISTS customers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  phone TEXT NOT NULL DEFAULT '',
+  email TEXT NOT NULL DEFAULT '',
+  gstin TEXT NOT NULL DEFAULT '',
+  address TEXT NOT NULL DEFAULT '',
+  city TEXT NOT NULL DEFAULT '',
+  notes TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name);
+
+CREATE TABLE IF NOT EXISTS suppliers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  phone TEXT NOT NULL DEFAULT '',
+  email TEXT NOT NULL DEFAULT '',
+  gstin TEXT NOT NULL DEFAULT '',
+  address TEXT NOT NULL DEFAULT '',
+  city TEXT NOT NULL DEFAULT '',
+  notes TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
 CREATE TABLE IF NOT EXISTS invoices (
- id TEXT PRIMARY KEY, number TEXT UNIQUE, date TEXT NOT NULL, due_date TEXT NOT NULL, client_id TEXT REFERENCES clients(id), pet_id TEXT REFERENCES pets(id),
- status TEXT NOT NULL, place_of_supply TEXT NOT NULL, inclusive INTEGER NOT NULL, round_off INTEGER NOT NULL,
- lines TEXT NOT NULL, subtotal INTEGER NOT NULL, discount INTEGER NOT NULL, taxable INTEGER NOT NULL,
- cgst INTEGER NOT NULL, sgst INTEGER NOT NULL, igst INTEGER NOT NULL, tax INTEGER NOT NULL, rounding INTEGER NOT NULL, total INTEGER NOT NULL,
- notes TEXT NOT NULL DEFAULT '', terms TEXT NOT NULL DEFAULT '', clinic TEXT NOT NULL, customer TEXT NOT NULL, pet TEXT NOT NULL,
- document_type TEXT NOT NULL, created_at TEXT NOT NULL
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  invoice_no TEXT NOT NULL UNIQUE,
+  customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
+  customer_name TEXT NOT NULL DEFAULT 'Walk-in Customer',
+  is_interstate INTEGER NOT NULL DEFAULT 0,
+  date TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  subtotal REAL NOT NULL DEFAULT 0,
+  discount REAL NOT NULL DEFAULT 0,
+  taxable REAL NOT NULL DEFAULT 0,
+  cgst REAL NOT NULL DEFAULT 0,
+  sgst REAL NOT NULL DEFAULT 0,
+  igst REAL NOT NULL DEFAULT 0,
+  tax_total REAL NOT NULL DEFAULT 0,
+  grand_total REAL NOT NULL DEFAULT 0,
+  paid REAL NOT NULL DEFAULT 0,
+  payment_method TEXT NOT NULL DEFAULT 'cash',
+  status TEXT NOT NULL DEFAULT 'paid' CHECK(status IN ('paid','partial','unpaid')),
+  notes TEXT NOT NULL DEFAULT '',
+  created_by TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
-CREATE TABLE IF NOT EXISTS allocations (id TEXT PRIMARY KEY, invoice_id TEXT NOT NULL REFERENCES invoices(id), product_id TEXT NOT NULL REFERENCES products(id), batch_id TEXT NOT NULL REFERENCES batches(id), line_index INTEGER NOT NULL, qty REAL NOT NULL);
-CREATE TABLE IF NOT EXISTS credits (id TEXT PRIMARY KEY, number TEXT NOT NULL UNIQUE, invoice_id TEXT NOT NULL UNIQUE REFERENCES invoices(id), date TEXT NOT NULL, reason TEXT NOT NULL, total INTEGER NOT NULL, created_at TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS returns (
- id TEXT PRIMARY KEY, number TEXT NOT NULL UNIQUE, invoice_id TEXT NOT NULL REFERENCES invoices(id),
- date TEXT NOT NULL, reason TEXT NOT NULL, notes TEXT NOT NULL DEFAULT '',
- subtotal INTEGER NOT NULL, discount INTEGER NOT NULL, taxable INTEGER NOT NULL,
- cgst INTEGER NOT NULL, sgst INTEGER NOT NULL, igst INTEGER NOT NULL, tax INTEGER NOT NULL,
- total INTEGER NOT NULL, rounding INTEGER NOT NULL DEFAULT 0, refund_due INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL
+CREATE INDEX IF NOT EXISTS idx_invoices_date ON invoices(date);
+CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
+CREATE INDEX IF NOT EXISTS idx_invoices_customer ON invoices(customer_id);
+
+CREATE TABLE IF NOT EXISTS invoice_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  invoice_id INTEGER NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+  product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
+  name TEXT NOT NULL,
+  qty REAL NOT NULL,
+  price REAL NOT NULL,
+  discount REAL NOT NULL DEFAULT 0,
+  tax_rate REAL NOT NULL DEFAULT 0,
+  taxable REAL NOT NULL DEFAULT 0,
+  tax_amount REAL NOT NULL DEFAULT 0,
+  line_total REAL NOT NULL DEFAULT 0
 );
-CREATE INDEX IF NOT EXISTS returns_invoice ON returns(invoice_id);
-CREATE TABLE IF NOT EXISTS return_lines (
- id TEXT PRIMARY KEY, return_id TEXT NOT NULL REFERENCES returns(id), invoice_id TEXT NOT NULL REFERENCES invoices(id),
- line_index INTEGER NOT NULL, product_id TEXT NOT NULL REFERENCES products(id),
- name TEXT NOT NULL, hsn TEXT NOT NULL, unit TEXT NOT NULL, type TEXT NOT NULL, tax_treatment TEXT NOT NULL,
- gst_rate REAL NOT NULL, qty REAL NOT NULL, rate INTEGER NOT NULL, discount REAL NOT NULL DEFAULT 0,
- gross INTEGER NOT NULL, discount_amount INTEGER NOT NULL, taxable INTEGER NOT NULL,
- cgst INTEGER NOT NULL, sgst INTEGER NOT NULL, igst INTEGER NOT NULL, tax INTEGER NOT NULL, total INTEGER NOT NULL,
- condition TEXT NOT NULL, created_at TEXT NOT NULL
+CREATE INDEX IF NOT EXISTS idx_invoice_items_invoice ON invoice_items(invoice_id);
+CREATE INDEX IF NOT EXISTS idx_invoice_items_product ON invoice_items(product_id);
+
+CREATE TABLE IF NOT EXISTS payments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  invoice_id INTEGER NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+  amount REAL NOT NULL,
+  method TEXT NOT NULL DEFAULT 'cash',
+  note TEXT NOT NULL DEFAULT '',
+  date TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
-CREATE INDEX IF NOT EXISTS return_lines_invoice ON return_lines(invoice_id, line_index);
-CREATE TABLE IF NOT EXISTS return_allocations (
- id TEXT PRIMARY KEY, return_id TEXT NOT NULL REFERENCES returns(id),
- allocation_id TEXT NOT NULL REFERENCES allocations(id), product_id TEXT NOT NULL REFERENCES products(id),
- batch_id TEXT NOT NULL REFERENCES batches(id), qty REAL NOT NULL
+CREATE INDEX IF NOT EXISTS idx_payments_invoice ON payments(invoice_id);
+
+CREATE TABLE IF NOT EXISTS purchases (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  purchase_no TEXT NOT NULL UNIQUE,
+  supplier_id INTEGER REFERENCES suppliers(id) ON DELETE SET NULL,
+  supplier_name TEXT NOT NULL DEFAULT '',
+  date TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  subtotal REAL NOT NULL DEFAULT 0,
+  tax_total REAL NOT NULL DEFAULT 0,
+  grand_total REAL NOT NULL DEFAULT 0,
+  paid REAL NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'received' CHECK(status IN ('received','pending')),
+  notes TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
-CREATE INDEX IF NOT EXISTS return_allocations_allocation ON return_allocations(allocation_id);
-CREATE TABLE IF NOT EXISTS payments (id TEXT PRIMARY KEY, invoice_id TEXT REFERENCES invoices(id), purchase_id TEXT REFERENCES purchases(id), direction TEXT NOT NULL, amount INTEGER NOT NULL, method TEXT NOT NULL, reference TEXT NOT NULL DEFAULT '', date TEXT NOT NULL, created_at TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS movements (id TEXT PRIMARY KEY, product_id TEXT NOT NULL REFERENCES products(id), batch_id TEXT REFERENCES batches(id), type TEXT NOT NULL, qty REAL NOT NULL, reference TEXT NOT NULL, note TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS counters (key TEXT PRIMARY KEY, value INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_purchases_date ON purchases(date);
+
+CREATE TABLE IF NOT EXISTS purchase_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  purchase_id INTEGER NOT NULL REFERENCES purchases(id) ON DELETE CASCADE,
+  product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
+  name TEXT NOT NULL,
+  qty REAL NOT NULL,
+  cost REAL NOT NULL,
+  tax_rate REAL NOT NULL DEFAULT 0,
+  taxable REAL NOT NULL DEFAULT 0,
+  tax_amount REAL NOT NULL DEFAULT 0,
+  line_total REAL NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_purchase_items_purchase ON purchase_items(purchase_id);
+
+CREATE TABLE IF NOT EXISTS expenses (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  category TEXT NOT NULL DEFAULT 'Miscellaneous',
+  amount REAL NOT NULL,
+  date TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  payment_method TEXT NOT NULL DEFAULT 'cash',
+  notes TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(date);
+
+CREATE TABLE IF NOT EXISTS stock_movements (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  delta REAL NOT NULL,
+  reason TEXT NOT NULL,
+  ref TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_movements_product ON stock_movements(product_id);
 `);
-export const getMeta = (key) => {
-  const row = db.prepare("SELECT value FROM meta WHERE key=?").get(key);
-  return row ? JSON.parse(row.value) : null;
+
+// ---- helpers -------------------------------------------------------------
+export const q = {
+  all: (sql, ...params) => db.prepare(sql).all(...params),
+  get: (sql, ...params) => db.prepare(sql).get(...params),
+  run: (sql, ...params) => db.prepare(sql).run(...params),
 };
-export const setMeta = (key, value) =>
-  db
-    .prepare(
-      "INSERT INTO meta(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-    )
-    .run(key, JSON.stringify(value));
-export const all = (table) => db.prepare(`SELECT * FROM ${table}`).all();
-export const insert = (table, obj) => {
-  const keys = Object.keys(obj);
-  return db
-    .prepare(
-      `INSERT INTO ${table} (${keys.join(",")}) VALUES (${keys.map(() => "?").join(",")})`,
-    )
-    .run(...keys.map((k) => obj[k]));
-};
-export const update = (table, id, obj) => {
-  const keys = Object.keys(obj);
-  return db
-    .prepare(
-      `UPDATE ${table} SET ${keys.map((k) => `${k}=?`).join(",")} WHERE id=?`,
-    )
-    .run(...keys.map((k) => obj[k]), id);
-};
+
+export function nextCounter(key) {
+  db.prepare('UPDATE counters SET value = value + 1 WHERE key = ?').run(key);
+  const row = db.prepare('SELECT value FROM counters WHERE key = ?').get(key);
+  return row.value;
+}
+
+export function transaction(fn) {
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const result = fn();
+    db.exec('COMMIT');
+    return result;
+  } catch (err) {
+    try { db.exec('ROLLBACK'); } catch { /* already rolled back */ }
+    throw err;
+  }
+}
+
+export function nowLocal() {
+  return fmtDateTime(new Date());
+}
+
+export function fmtDateTime(d) {
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
+export function isEmpty() {
+  const row = q.get('SELECT COUNT(*) AS n FROM users');
+  return Number(row.n) === 0;
+}
