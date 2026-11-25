@@ -1,8 +1,10 @@
 node_modules
 dist
+data/*.sqlite*
 .git
-qa
-data
-*.zip
+.gitignore
+tests
 *.log
-.env*
+Dockerfile
+.dockerignore
+README.md
