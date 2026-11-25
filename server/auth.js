@@ -1,6 +1,6 @@
-// shopdesk — scrypt password hashing + session middleware (no native deps)
+// shopdesk — scrypt password hashing + session middleware (async, MongoDB-backed)
 import crypto from 'node:crypto';
-import { q } from './db.js';
+import { models } from './db.js';
 
 const SESSION_DAYS = 30;
 export const COOKIE = 'shopdesk_session';
@@ -13,7 +13,7 @@ export function hashPassword(password) {
 
 export function verifyPassword(password, stored) {
   try {
-    const [scheme, N, r, p, saltHex, hashHex] = stored.split('$');
+    const [scheme, N, r, p, saltHex, hashHex] = String(stored).split('$');
     if (scheme !== 'scrypt') return false;
     const derived = crypto.scryptSync(password, Buffer.from(saltHex, 'hex'), 64, { N: Number(N), r: Number(r), p: Number(p) });
     const expected = Buffer.from(hashHex, 'hex');
@@ -23,17 +23,15 @@ export function verifyPassword(password, stored) {
   }
 }
 
-export function createSession(userId) {
+export async function createSession(user) {
   const token = crypto.randomBytes(32).toString('hex');
-  const expires = new Date(Date.now() + SESSION_DAYS * 86400 * 1000);
-  const p = (n) => String(n).padStart(2, '0');
-  const expiresStr = `${expires.getFullYear()}-${p(expires.getMonth() + 1)}-${p(expires.getDate())} ${p(expires.getHours())}:${p(expires.getMinutes())}:${p(expires.getSeconds())}`;
-  q.run('INSERT INTO sessions(token, user_id, expires_at) VALUES (?,?,?)', token, userId, expiresStr);
+  const expiresAt = new Date(Date.now() + SESSION_DAYS * 86400 * 1000);
+  await models.Session.create({ token, userId: user._id, businessId: user.businessId, expiresAt });
   return token;
 }
 
-export function destroySession(token) {
-  q.run('DELETE FROM sessions WHERE token = ?', token);
+export async function destroySession(token) {
+  await models.Session.deleteOne({ token });
 }
 
 export function parseCookies(header = '') {
@@ -46,19 +44,25 @@ export function parseCookies(header = '') {
   return out;
 }
 
-export function attachUser(req, _res, next) {
-  const cookies = parseCookies(req.headers.cookie || '');
-  const token = cookies[COOKIE];
-  req.sessionToken = token || null;
-  req.user = null;
-  if (token) {
-    const row = q.get(
-      `SELECT u.id, u.name, u.email, u.role, s.expires_at
-       FROM sessions s JOIN users u ON u.id = s.user_id
-       WHERE s.token = ? AND s.expires_at > datetime('now','localtime')`,
-      token
-    );
-    if (row) req.user = { id: row.id, name: row.name, email: row.email, role: row.role };
+export async function attachUser(req, _res, next) {
+  try {
+    const cookies = parseCookies(req.headers.cookie || '');
+    req.sessionToken = cookies[COOKIE] || null;
+    req.user = null;
+    req.businessId = null;
+    if (req.sessionToken) {
+      const session = await models.Session.findOne({ token: req.sessionToken, expiresAt: { $gt: new Date() } }).lean();
+      if (session) {
+        const user = await models.User.findById(session.userId).lean();
+        if (user) {
+          req.user = { id: String(user._id), name: user.name, email: user.email, role: user.role, businessId: String(user.businessId) };
+          req.businessId = user.businessId;
+        }
+      }
+    }
+  } catch (err) {
+    console.error('attachUser failed:', err);
+    req.user = null; req.businessId = null;
   }
   next();
 }
@@ -72,4 +76,12 @@ export function requireAdmin(req, res, next) {
   if (!req.user) return res.status(401).json({ error: 'Please sign in to continue.' });
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Only an admin can do that.' });
   next();
+}
+
+export function sessionCookie(token, secure = true) {
+  return `${COOKIE}=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${SESSION_DAYS * 86400}${secure ? '; Secure' : ''}`;
+}
+
+export function clearSessionCookie() {
+  return `${COOKIE}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0`;
 }

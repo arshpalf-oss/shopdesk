@@ -25,6 +25,12 @@ export function AppProvider({ children }) {
     return d.user;
   }, []);
 
+  const signup = useCallback(async (payload) => {
+    const d = await api('/auth/signup', { method: 'POST', body: payload });
+    setUser(d.user);
+    return d.user;
+  }, []);
+
   const logout = useCallback(async () => {
     try { await api('/auth/logout', { method: 'POST' }); } catch { /* ignore */ }
     setUser(null);
@@ -36,8 +42,8 @@ export function AppProvider({ children }) {
   const compact = useCallback((n) => compactMoney(n, currency), [currency]);
 
   const value = useMemo(
-    () => ({ user, business, refreshBusiness, login, logout, currency, money, compact }),
-    [user, business, refreshBusiness, login, logout, currency, money, compact]
+    () => ({ user, business, refreshBusiness, login, signup, logout, currency, money, compact }),
+    [user, business, refreshBusiness, login, signup, logout, currency, money, compact]
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

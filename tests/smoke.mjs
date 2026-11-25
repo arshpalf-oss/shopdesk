@@ -3,8 +3,10 @@
 // Bundles the SPA, renders it inside jsdom against a RUNNING shopdesk server,
 // and asserts that key screens render real seeded data. No browser needed.
 //
-//   1. start the app:        npm run dev          (seeds the demo business on first run)
-//   2. in another terminal:  node tests/smoke.mjs [port]
+//   1. start MongoDB and set MONGODB_URI (Atlas string, or mongodb://127.0.0.1:27017/shopdesk)
+//   2. create the demo workspace once:  npm run seed
+//   3. start the app:                   npm run dev
+//   4. in another terminal:             node tests/smoke.mjs [port]
 //
 // Exits non-zero if any route fails to render its marker.
 import { execSync } from 'node:child_process';

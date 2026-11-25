@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Zap, Mail, Lock, Eye, EyeOff, AlertOctagon, ArrowRight, Sparkles, Printer, TrendingUp, ShieldCheck, Store, Pill, Cpu, Croissant, Shirt, Coffee, Wrench, ShoppingBasket } from 'lucide-react';
+import { Zap, Mail, Lock, Eye, EyeOff, AlertOctagon, ArrowRight, Sparkles, Printer, TrendingUp, ShieldCheck, Store, Pill, Cpu, Croissant, Shirt, Coffee, Wrench, ShoppingBasket, Building2, User, PackageCheck, BadgeCheck } from 'lucide-react';
 import { useApp } from '../store.jsx';
 
 const BUSINESS_TYPES = [
@@ -74,11 +74,15 @@ function FloatingReceipt() {
 }
 
 export default function Login() {
-  const { user, login } = useApp();
+  const { user, login, signup } = useApp();
   const navigate = useNavigate();
   const location = useLocation();
+  const [mode, setMode] = useState('signin'); // 'signin' | 'signup'
+  const [businessName, setBusinessName] = useState('');
+  const [ownerName, setOwnerName] = useState('');
   const [email, setEmail] = useState('aarav@shopdesk.demo');
   const [password, setPassword] = useState('demo1234');
+  const [withSampleData, setWithSampleData] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -88,16 +92,26 @@ export default function Login() {
 
   const from = location.state?.from;
 
+  const switchMode = (next) => {
+    setMode(next);
+    setError('');
+    if (next === 'signup') { setEmail(''); setPassword(''); } else { setEmail('aarav@shopdesk.demo'); setPassword('demo1234'); }
+  };
+
   const submit = async (e) => {
     e.preventDefault();
     if (busy) return;
     setBusy(true);
     setError('');
     try {
-      await login(email.trim(), password);
+      if (mode === 'signup') {
+        await signup({ businessName: businessName.trim(), name: ownerName.trim(), email: email.trim(), password, withSampleData });
+      } else {
+        await login(email.trim(), password);
+      }
       navigate(from && from !== '/login' ? from : '/', { replace: true });
     } catch (err) {
-      setError(err.message || 'Could not sign you in.');
+      setError(err.message || (mode === 'signup' ? 'Could not create your workspace.' : 'Could not sign you in.'));
       setShake(true);
       setTimeout(() => setShake(false), 600);
       setBusy(false);
@@ -168,10 +182,14 @@ export default function Login() {
         <div className={`login-card${shake ? ' shake' : ''}`}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
             <ShieldCheck size={16} color="var(--teal)" />
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '.22em', color: 'var(--muted)', textTransform: 'uppercase' }}>Secure sign in</span>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '.22em', color: 'var(--muted)', textTransform: 'uppercase' }}>{mode === 'signup' ? 'Create your workspace' : 'Secure sign in'}</span>
           </div>
-          <h1>Welcome back, <span style={{ color: 'var(--lime)' }}>shopkeeper.</span></h1>
-          <p className="sub">Sign in to open your counter. New here? Ask your admin to create your account.</p>
+          <div className="seg" style={{ marginBottom: 18 }} role="tablist" aria-label="Sign in or create workspace">
+            <button type="button" role="tab" aria-selected={mode === 'signin'} className={`seg-item${mode === 'signin' ? ' active' : ''}`} onClick={() => switchMode('signin')}>Sign in</button>
+            <button type="button" role="tab" aria-selected={mode === 'signup'} className={`seg-item${mode === 'signup' ? ' active' : ''}`} onClick={() => switchMode('signup')}>Create workspace</button>
+          </div>
+          <h1>{mode === 'signup' ? <>Your shop, <span style={{ color: 'var(--lime)' }}>ready in a minute.</span></> : <>Welcome back, <span style={{ color: 'var(--lime)' }}>shopkeeper.</span></>}</h1>
+          <p className="sub">{mode === 'signup' ? 'Free while in early access — no card required. Your data stays yours, exports anytime.' : 'Sign in to open your counter. Or spin up a brand-new workspace of your own.'}</p>
 
           {error && (
             <div className="error-banner" role="alert">
@@ -180,16 +198,40 @@ export default function Login() {
             </div>
           )}
 
-          <div className="demo-chips">
-            <button type="button" className="demo-chip" onClick={() => fillDemo('owner')}>
-              <span><small>Demo · Owner</small><span>Aarav Sharma</span></span>
-            </button>
-            <button type="button" className="demo-chip" onClick={() => fillDemo('staff')}>
-              <span><small>Demo · Staff</small><span>Riya Verma</span></span>
-            </button>
-          </div>
+          {mode === 'signin' && (
+            <div className="demo-chips">
+              <button type="button" className="demo-chip" onClick={() => fillDemo('owner')}>
+                <span><small>Demo · Owner</small><span>Aarav Sharma</span></span>
+              </button>
+              <button type="button" className="demo-chip" onClick={() => fillDemo('staff')}>
+                <span><small>Demo · Staff</small><span>Riya Verma</span></span>
+              </button>
+            </div>
+          )}
 
           <form onSubmit={submit}>
+            {mode === 'signup' && (
+              <>
+                <div className="field" style={{ marginBottom: 12 }}>
+                  <label htmlFor="businessName">Business name</label>
+                  <div style={{ position: 'relative' }}>
+                    <Building2 size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--muted)' }} />
+                    <input id="businessName" className="input" type="text" autoComplete="organization" value={businessName}
+                      onChange={(e) => setBusinessName(e.target.value)} placeholder="e.g. Shivam General Store" required
+                      style={{ paddingLeft: 38 }} />
+                  </div>
+                </div>
+                <div className="field" style={{ marginBottom: 12 }}>
+                  <label htmlFor="ownerName">Your name</label>
+                  <div style={{ position: 'relative' }}>
+                    <User size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--muted)' }} />
+                    <input id="ownerName" className="input" type="text" autoComplete="name" value={ownerName}
+                      onChange={(e) => setOwnerName(e.target.value)} placeholder="e.g. Aarav Sharma" required
+                      style={{ paddingLeft: 38 }} />
+                  </div>
+                </div>
+              </>
+            )}
             <div className="field" style={{ marginBottom: 12 }}>
               <label htmlFor="email">Email</label>
               <div style={{ position: 'relative' }}>
@@ -199,11 +241,11 @@ export default function Login() {
                   style={{ paddingLeft: 38 }} />
               </div>
             </div>
-            <div className="field" style={{ marginBottom: 18 }}>
-              <label htmlFor="password">Password</label>
+            <div className="field" style={{ marginBottom: mode === 'signup' ? 12 : 18 }}>
+              <label htmlFor="password">Password{mode === 'signup' && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> — min 8 characters</span>}</label>
               <div style={{ position: 'relative' }}>
                 <Lock size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--muted)' }} />
-                <input id="password" className="input" type={showPassword ? 'text' : 'password'} autoComplete="current-password"
+                <input id="password" className="input" type={showPassword ? 'text' : 'password'} autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
                   value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required
                   style={{ paddingLeft: 38, paddingRight: 44 }} />
                 <button type="button" className="icon-btn" aria-label={showPassword ? 'Hide password' : 'Show password'}
@@ -213,8 +255,22 @@ export default function Login() {
                 </button>
               </div>
             </div>
+            {mode === 'signup' && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, padding: '10px 12px', border: '1px solid var(--line)', borderRadius: 12, cursor: 'pointer', background: 'rgba(183,240,79,.04)' }}>
+                <input type="checkbox" checked={withSampleData} onChange={(e) => setWithSampleData(e.target.checked)}
+                  style={{ width: 17, height: 17, accentColor: 'var(--lime)', cursor: 'pointer', flex: 'none' }} />
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <PackageCheck size={17} color="var(--lime)" />
+                  <span style={{ fontSize: 12, lineHeight: 1.35 }}><b>Start with a lived-in shop</b><br /><span style={{ color: 'var(--muted)' }}>924 sample bills, 75 days of sales, products &amp; reports — explored in seconds. Optional.</span></span>
+                </span>
+              </label>
+            )}
             <button type="submit" className="btn btn-primary btn-lg" disabled={busy} style={{ width: '100%', justifyContent: 'center' }}>
-              {busy ? <span className="spinner" /> : <>Unlock my counter <ArrowRight size={17} strokeWidth={2.4} /></>}
+              {busy
+                ? <span className="spinner" />
+                : mode === 'signup'
+                  ? <>Open my workspace <ArrowRight size={17} strokeWidth={2.4} /></>
+                  : <>Unlock my counter <ArrowRight size={17} strokeWidth={2.4} /></>}
             </button>
           </form>
 
@@ -226,7 +282,7 @@ export default function Login() {
           <div style={{ display: 'flex', justifyContent: 'center', gap: 18, color: 'var(--muted)', fontSize: 10.5 }}>
             <span>GST invoices</span><span>·</span><span>Live stock</span><span>·</span><span>UPI QR on every bill</span><span>·</span><span>JSON backup</span>
           </div>
-          <div className="login-foot">shopdesk v2.0 — made for Indian retail, ready for everywhere</div>
+          <div className="login-foot">shopdesk v3.0 · cloud edition — your counter, on every device</div>
         </div>
       </div>
     </div>

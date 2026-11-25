@@ -1,7 +1,8 @@
-// shopdesk — deterministic demo seed. A "Shivam General Store" on Nai Sarak, Mathura.
-// Safe to re-run: resets every table and rebuilds the same dataset.
-import { db, q, transaction, nextCounter, fmtDateTime } from './db.js';
-import crypto from 'node:crypto';
+// shopdesk — deterministic demo seed (per workspace). A "Shivam General Store"-style assortment.
+// Safe to re-run for a workspace: wipes tenant data and rebuilds the same dataset.
+import mongoose from 'mongoose';
+import { models, fmtDateTime, asId } from './db.js';
+import { round2, gstSplit } from './billing.js';
 
 // ---------- deterministic RNG ----------
 function mulberry32(seed) {
@@ -16,14 +17,6 @@ function mulberry32(seed) {
 const rand = mulberry32(20261125);
 const pick = (arr) => arr[Math.floor(rand() * arr.length)];
 const chance = (p) => rand() < p;
-const round2 = (n) => Math.round(n * 100) / 100;
-
-// ---------- password hashing (must match auth.js) ----------
-export function hashPassword(password) {
-  const salt = crypto.randomBytes(16);
-  const derived = crypto.scryptSync(password, salt, 64, { N: 16384, r: 8, p: 1 });
-  return `scrypt$16384$8$1$${salt.toString('hex')}$${derived.toString('hex')}`;
-}
 
 const CATEGORIES = [
   { name: 'Grocery & Staples', color: '#fbbf24' },
@@ -145,240 +138,253 @@ function weightedProduct() {
   return PRODUCTS.length - 1;
 }
 
-export function clearAll() {
-  for (const t of ['payments','invoice_items','invoices','purchase_items','purchases','expenses','stock_movements','products','categories','customers','suppliers','sessions','users','business','counters']) {
-    db.exec(`DELETE FROM ${t}`);
-  }
-  db.exec("INSERT OR IGNORE INTO counters(key, value) VALUES ('invoice', 0), ('purchase', 0)");
+
+const EMPTY_TENANT = (businessId) => ([
+  [models.Payment, {}],
+  [models.InvoiceItem, {}],
+  [models.Invoice, {}],
+  [models.PurchaseItem, {}],
+  [models.Purchase, {}],
+  [models.Expense, {}],
+  [models.StockMovement, {}],
+  [models.Product, {}],
+  [models.Category, {}],
+  [models.Customer, {}],
+  [models.Supplier, {}],
+  [models.Counter, {}],
+]);
+
+/** Wipe every tenant-owned document for a workspace. Users and the business profile survive. */
+export async function clearBusinessData(businessId) {
+  const ops = EMPTY_TENANT().map(([Model]) => Model.deleteMany({ businessId }));
+  await Promise.all(ops);
 }
 
-export function seedDatabase() {
-  transaction(() => {
-    clearAll();
+/**
+ * Fill a workspace with the lively demo dataset (Shivam-style assortment,
+ * 75 days of GST bills, purchases, expenses). Caller owns the business doc.
+ */
+export async function seedBusinessData(businessId) {
+  await clearBusinessData(businessId);
+  const bId = asId(businessId);
 
-    // ---------- business profile ----------
-    db.prepare(`INSERT INTO business(id, name, owner_name, email, phone, address, city, state, pincode, gstin, invoice_prefix, purchase_prefix, upi_id, currency, default_tax, footer_note, terms)
-      VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'INV', 'PUR', ?, 'INR', 18, ?, ?)`).run(
-      'Shivam General Store', 'Aarav Sharma', 'aarav@shivamstore.in', '0565-2401234',
-      '27 Nai Sarak, Near Jama Masjid', 'Mathura', 'Uttar Pradesh', '281001', '09AAHCS1234A1Z5', 'shivamgeneral@ybl',
-      'GSTIN 09AAHCS1234A1Z5 · Goods once sold will not be taken back · E. & O.E.',
-      'Subject to Mathura jurisdiction.' );
+  // ---------- categories ----------
+  const catDocs = CATEGORIES.map((c) => ({ businessId: bId, name: c.name, color: c.color }));
+  const catInserted = await models.Category.insertMany(catDocs);
+  const catIds = catInserted.map((d) => d._id);
 
-    // ---------- users ----------
-    db.prepare('INSERT INTO users(name, email, password_hash, role) VALUES (?,?,?,?)')
-      .run('Aarav Sharma', 'aarav@shopdesk.demo', hashPassword('demo1234'), 'admin');
-    db.prepare('INSERT INTO users(name, email, password_hash, role) VALUES (?,?,?,?)')
-      .run('Riya Verma', 'riya@shopdesk.demo', hashPassword('demo1234'), 'staff');
-
-    // ---------- categories ----------
-    const catIds = [];
-    for (const c of CATEGORIES) {
-      const r = db.prepare('INSERT INTO categories(name, color) VALUES (?,?)').run(c.name, c.color);
-      catIds.push(Number(r.lastInsertRowid));
-    }
-
-    // ---------- products ----------
-    const productRows = [];
-    PRODUCTS.forEach(([name, unit, price, costRatio, tax, reorder], i) => {
-      const sku = `SD-${String(i + 1).padStart(3, '0')}`;
-      const barcode = String(8901234500000 + i * 137 + Math.floor(rand() * 90));
-      const cost = round2(price * costRatio * 0.82);
-      const r = db.prepare(`INSERT INTO products(sku, barcode, name, category_id, unit, price, cost, tax_rate, stock, reorder_level, favorite)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
-        .run(sku, barcode, name, catIds[CAT_OF[i]], unit, price, cost, tax, 100, reorder, i % 17 === 0 ? 1 : 0);
-      productRows.push({ id: Number(r.lastInsertRowid), name, price, cost, tax, index: i });
-    });
-
-    // ---------- customers & suppliers ----------
-    const customerIds = [];
-    for (const [name, phone, email, gstin, address, city] of CUSTOMERS) {
-      const r = db.prepare('INSERT INTO customers(name, phone, email, gstin, address, city) VALUES (?,?,?,?,?,?)')
-        .run(name, phone, email, gstin, address, city);
-      customerIds.push(Number(r.lastInsertRowid));
-    }
-    const supplierIds = [];
-    for (const [name, phone, email, gstin, address, city] of SUPPLIERS) {
-      const r = db.prepare('INSERT INTO suppliers(name, phone, email, gstin, address, city) VALUES (?,?,?,?,?,?)')
-        .run(name, phone, email, gstin, address, city);
-      supplierIds.push(Number(r.lastInsertRowid));
-    }
-
-    // ---------- sales history (75 days) ----------
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    let invoiceSeq = 0;
-    let creditPool = 0;
-    const payUsage = { cash: 0, upi: 0, card: 0, bank: 0, credit: 0 };
-
-    for (let d = 74; d >= 0; d--) {
-      const day = new Date(today);
-      day.setDate(day.getDate() - d);
-      const wd = day.getDay();
-      const seasonal = 0.9 + Math.sin((74 - d) * 0.42) * 0.18 + rand() * 0.25;
-      const bills = Math.max(3, Math.round((8 + rand() * 6) * WEEKDAY_FACTOR[wd] * seasonal));
-      const isToday = d === 0;
-      const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
-
-      for (let b = 0; b < bills; b++) {
-        const hour = 8 + Math.floor(rand() * 13) + (rand() < 0.35 ? 0 : 0); // 8..20
-        const minute = Math.floor(rand() * 60);
-        if (isToday && hour * 60 + minute > nowMinutes - 10) continue; // never in the future
-        const when = new Date(day);
-        when.setHours(Math.min(hour, 21), minute, Math.floor(rand() * 60), 0);
-
-        const itemCount = 1 + Math.floor(Math.pow(rand(), 1.6) * 5); // weighted toward small baskets
-        const chosen = new Map();
-        for (let k = 0; k < itemCount; k++) {
-          const pIdx = weightedProduct();
-          chosen.set(pIdx, (chosen.get(pIdx) || 0) + 1);
-        }
-
-        let gross = 0, taxableSum = 0, taxSum = 0;
-        const lines = [];
-        for (const [pIdx, qtyRaw] of chosen) {
-          const p = productRows[pIdx];
-          const qty = p.price < 60 ? qtyRaw + Math.floor(rand() * 2) : qtyRaw;
-          const lineDisc = chance(0.12) ? (chance(0.5) ? 5 : 10) : 0;
-          const taxable = round2(qty * p.price * (1 - lineDisc / 100));
-          const tax = round2(taxable * p.tax / 100);
-          gross = round2(gross + qty * p.price);
-          taxableSum = round2(taxableSum + taxable);
-          taxSum = round2(taxSum + tax);
-          lines.push({ p, qty, lineDisc, taxable, tax, total: round2(taxable + tax) });
-        }
-
-        const cgst = round2(taxSum / 2), sgst = round2(taxSum - cgst);
-        const billDiscount = gross > 400 && chance(0.18) ? pick([10, 20, 25]) : 0;
-        const grand = Math.max(0, round2(taxableSum + taxSum - billDiscount));
-
-        // payment mix: UPI leads, cash solid, card rare, some credit
-        const r = rand();
-        const method = r < 0.33 ? 'cash' : r < 0.71 ? 'upi' : r < 0.83 ? 'card' : r < 0.88 ? 'bank' : 'credit';
-        payUsage[method]++;
-        let paid = grand;
-        let status = 'paid';
-        if (method === 'credit') {
-          if (chance(0.45)) { paid = 0; status = 'unpaid'; }
-          else { paid = round2(grand * (0.3 + rand() * 0.5)); status = 'partial'; }
-          creditPool = round2(creditPool + (grand - paid));
-        }
-
-        invoiceSeq++;
-        const invoiceNo = `INV-${String(invoiceSeq).padStart(4, '0')}`;
-        const isRegistered = chance(0.45);
-        const cId = isRegistered ? pick(customerIds) : null;
-        const cName = cId ? CUSTOMERS[customerIds.indexOf(cId)][0] : 'Walk-in Customer';
-        const ts = fmtDateTime(when);
-        const ir = db.prepare(`INSERT INTO invoices(invoice_no, customer_id, customer_name, is_interstate, date, subtotal, discount, taxable, cgst, sgst, igst, tax_total, grand_total, paid, payment_method, status, notes, created_by, created_at)
-          VALUES (?,?,?,0,?,?,?,?,?,?,0,?,?,?,?,?,?,'Seed',?)`)
-          .run(invoiceNo, cId, cName, ts, gross, billDiscount, taxableSum, cgst, sgst, taxSum, grand, paid, method, status, '', ts);
-        const invoiceId = Number(ir.lastInsertRowid);
-        for (const l of lines) {
-          db.prepare(`INSERT INTO invoice_items(invoice_id, product_id, name, qty, price, discount, tax_rate, taxable, tax_amount, line_total)
-            VALUES (?,?,?,?,?,?,?,?,?,?)`)
-            .run(invoiceId, l.p.id, l.p.name, l.qty, l.p.price, l.lineDisc, l.p.tax, l.taxable, l.tax, l.total);
-        }
-        if (paid > 0) {
-          db.prepare('INSERT INTO payments(invoice_id, amount, method, note, date) VALUES (?,?,?,?,?)')
-            .run(invoiceId, paid, method === 'credit' ? 'cash' : method, 'Seed', ts);
-        }
-      }
-    }
-    db.prepare("UPDATE counters SET value = ? WHERE key = 'invoice'").run(invoiceSeq);
-
-    // ---------- purchases (stock-in) ----------
-    let purchaseSeq = 0;
-    const purchaseDates = [70, 56, 41, 27, 12, 3];
-    for (const d of purchaseDates) {
-      const day = new Date(today);
-      day.setDate(day.getDate() - d);
-      day.setHours(11, 30, 0, 0);
-      const ts = fmtDateTime(day);
-      const supplierIdx = Math.floor(rand() * supplierIds.length);
-      const nLines = 3 + Math.floor(rand() * 4);
-      const chosen = new Map();
-      while (chosen.size < nLines) {
-        chosen.set(Math.floor(rand() * PRODUCTS.length), 0.6 + rand() * 1.6);
-      }
-      let subtotal = 0, taxTotal = 0;
-      const lines = [];
-      for (const [pIdx, qtyFactor] of chosen) {
-        const p = productRows[pIdx];
-        const qty = Math.round(qtyFactor * 24);
-        const taxable = round2(qty * p.cost);
-        const tax = round2(taxable * p.tax / 100);
-        subtotal = round2(subtotal + taxable);
-        taxTotal = round2(taxTotal + tax);
-        lines.push({ p, qty, taxable, tax, total: round2(taxable + tax) });
-      }
-      const grand = round2(subtotal + taxTotal);
-      purchaseSeq++;
-      const purchaseNo = `PUR-${String(purchaseSeq).padStart(4, '0')}`;
-      const paid = d <= 3 ? grand : round2(grand * (chance(0.75) ? 1 : 0.6));
-      const pr = db.prepare(`INSERT INTO purchases(purchase_no, supplier_id, supplier_name, date, subtotal, tax_total, grand_total, paid, status, notes, created_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
-        .run(purchaseNo, supplierIds[supplierIdx], SUPPLIERS[supplierIdx][0], ts, subtotal, taxTotal, grand, paid, 'received', '', ts);
-      const purchaseId = Number(pr.lastInsertRowid);
-      for (const l of lines) {
-        db.prepare(`INSERT INTO purchase_items(purchase_id, product_id, name, qty, cost, tax_rate, taxable, tax_amount, line_total)
-          VALUES (?,?,?,?,?,?,?,?,?)`)
-          .run(purchaseId, l.p.id, l.p.name, l.qty, l.p.cost, l.p.tax, l.taxable, l.tax, l.total);
-      }
-    }
-    db.prepare("UPDATE counters SET value = ? WHERE key = 'purchase'").run(purchaseSeq);
-
-    // ---------- expenses ----------
-    const expSeeds = [];
-    for (let m = 2; m >= 0; m--) {
-      const d = new Date(today.getFullYear(), today.getMonth() - m, 5, 10, 0, 0, 0);
-      if (d <= today) expSeeds.push(['Rent (Shop + Godown)', 7500, d]);
-      const s1 = new Date(today.getFullYear(), today.getMonth() - m, 1, 10, 0, 0, 0);
-      if (s1 <= today) expSeeds.push(['Salary — Riya (Billing)', 8000, s1]);
-      const s15 = new Date(today.getFullYear(), today.getMonth() - m, 15, 10, 0, 0, 0);
-      if (s15 <= today) expSeeds.push(['Salary — Riya (Billing)', 8000, s15]);
-      const e = new Date(today.getFullYear(), today.getMonth() - m, 10, 10, 0, 0, 0);
-      if (e <= today) expSeeds.push(['Electricity (PVVNL)', 2400 + Math.round(rand() * 1100), e]);
-      const net = new Date(today.getFullYear(), today.getMonth() - m, 18, 10, 0, 0, 0);
-      if (net <= today) expSeeds.push(['Internet & Billing Software', 1299, net]);
-    }
-    for (let i = 0; i < 22; i++) {
-      const d = new Date(today);
-      d.setDate(d.getDate() - Math.floor(rand() * 74));
-      d.setHours(9 + Math.floor(rand() * 11), Math.floor(rand() * 60), 0, 0);
-      expSeeds.push([pick(['Transport / Dharmkata', 'Packaging (Bags & Labels)', 'Chai & Refreshment', 'Repair & Maintenance', 'Stationery & Printing', 'Miscellaneous']), Math.round(80 + rand() * 700), d]);
-    }
-    for (const [category, amount, when] of expSeeds) {
-      db.prepare('INSERT INTO expenses(category, amount, date, payment_method, notes, created_at) VALUES (?,?,?,?,?,?)')
-        .run(category, amount, fmtDateTime(when), chance(0.6) ? 'cash' : 'upi', '', fmtDateTime(when));
-    }
-
-    // ---------- curated stock levels (healthy + low + one out) ----------
-    const healthy = (i, v) => { const p = productRows[i]; db.prepare('UPDATE products SET stock = ? WHERE id = ?').run(v, p.id); };
-    const LOW = { 16: 18, 26: 9, 8: 11, 37: 6, 33: 14, 58: 3, 12: 6, 36: 8 };  // Kurkure, Dairy Milk, Tata Salt, Bread, Amul Gold, Pampers, Chilli, Curd
-    productRows.forEach((p) => {
-      if (LOW[p.index] !== undefined) {
-        db.prepare('UPDATE products SET stock = ? WHERE id = ?').run(LOW[p.index], p.id);
-      } else {
-        healthy(p.index, 30 + Math.floor(rand() * 190));
-      }
-    });
-    db.prepare('UPDATE products SET stock = 0 WHERE id = ?').run(productRows[55].id); // Mortein spray — out of stock
-
-    // opening stock movements
-    const mv = db.prepare('INSERT INTO stock_movements(product_id, delta, reason, ref, created_at) VALUES (?,?,?,?,?)');
-    const nowTs = fmtDateTime(new Date());
-    for (const p of productRows) {
-      const row = q.get('SELECT stock FROM products WHERE id = ?', p.id);
-      mv.run(p.id, Number(row.stock), 'opening', 'Opening stock', nowTs);
-    }
+  // ---------- products ----------
+  const productDocs = PRODUCTS.map(([name, unit, price, costRatio, tax, reorder], i) => {
+    const sku = `SD-${String(i + 1).padStart(3, '0')}`;
+    const barcode = String(8901234500000 + i * 137 + Math.floor(rand() * 90));
+    const cost = round2(price * costRatio * 0.82);
+    return {
+      _id: new mongoose.Types.ObjectId(),
+      businessId: bId, sku, barcode, name,
+      category_id: catIds[CAT_OF[i]],
+      unit, price, cost, tax_rate: tax,
+      stock: 100, reorder_level: reorder, favorite: i % 17 === 0,
+    };
   });
+  await models.Product.insertMany(productDocs);
+  const productRows = productDocs.map((p, i) => ({ id: p._id, name: p.name, price: p.price, cost: p.cost, tax: p.tax_rate, index: i }));
 
-  const counts = q.get('SELECT (SELECT COUNT(*) FROM invoices) AS invoices, (SELECT COUNT(*) FROM products) AS products, (SELECT COUNT(*) FROM customers) AS customers');
-  console.log(`Seeded demo business: ${counts.invoices} invoices · ${counts.products} products · ${counts.customers} customers`);
-}
+  // ---------- customers & suppliers ----------
+  const customerDocs = CUSTOMERS.map(([name, phone, email, gstin, address, city]) => ({ businessId: bId, name, phone, email, gstin, address, city }));
+  const customerInserted = await models.Customer.insertMany(customerDocs);
+  const customerIds = customerInserted.map((d) => d._id);
 
-// CLI entry: node server/seed.js
-if (process.argv[1] && process.argv[1].endsWith('seed.js')) {
-  seedDatabase();
-  process.exit(0);
+  const supplierDocs = SUPPLIERS.map(([name, phone, email, gstin, address, city]) => ({ businessId: bId, name, phone, email, gstin, address, city }));
+  const supplierInserted = await models.Supplier.insertMany(supplierDocs);
+  const supplierIds = supplierInserted.map((d) => d._id);
+
+  // ---------- sales history (75 days) ----------
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const invoiceDocs = [];
+  const itemDocs = [];
+  const paymentDocs = [];
+  let invoiceSeq = 0;
+
+  for (let d = 74; d >= 0; d--) {
+    const day = new Date(today);
+    day.setDate(day.getDate() - d);
+    const wd = day.getDay();
+    const seasonal = 0.9 + Math.sin((74 - d) * 0.42) * 0.18 + rand() * 0.25;
+    const bills = Math.max(3, Math.round((8 + rand() * 6) * WEEKDAY_FACTOR[wd] * seasonal));
+    const isToday = d === 0;
+    const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
+
+    for (let b = 0; b < bills; b++) {
+      const hour = 8 + Math.floor(rand() * 13);
+      const minute = Math.floor(rand() * 60);
+      if (isToday && hour * 60 + minute > nowMinutes - 10) continue;
+      const when = new Date(day);
+      when.setHours(Math.min(hour, 21), minute, Math.floor(rand() * 60), 0);
+
+      const itemCount = 1 + Math.floor(Math.pow(rand(), 1.6) * 5);
+      const chosen = new Map();
+      for (let k = 0; k < itemCount; k++) {
+        const pIdx = weightedProduct();
+        chosen.set(pIdx, (chosen.get(pIdx) || 0) + 1);
+      }
+
+      let gross = 0, taxableSum = 0, taxSum = 0;
+      const lines = [];
+      for (const [pIdx, qtyRaw] of chosen) {
+        const p = productRows[pIdx];
+        const qty = p.price < 60 ? qtyRaw + Math.floor(rand() * 2) : qtyRaw;
+        const lineDisc = chance(0.12) ? (chance(0.5) ? 5 : 10) : 0;
+        const taxable = round2(qty * p.price * (1 - lineDisc / 100));
+        const tax = round2((taxable * p.tax) / 100);
+        gross = round2(gross + qty * p.price);
+        taxableSum = round2(taxableSum + taxable);
+        taxSum = round2(taxSum + tax);
+        lines.push({ p, qty, lineDisc, taxable, tax, total: round2(taxable + tax) });
+      }
+
+      const { cgst, sgst } = gstSplit(taxSum, false);
+      const billDiscount = gross > 400 && chance(0.18) ? pick([10, 20, 25]) : 0;
+      const grand = Math.max(0, round2(taxableSum + taxSum - billDiscount));
+
+      const r = rand();
+      const method = r < 0.33 ? 'cash' : r < 0.71 ? 'upi' : r < 0.83 ? 'card' : r < 0.88 ? 'bank' : 'credit';
+      let paid = grand;
+      let status = 'paid';
+      if (method === 'credit') {
+        if (chance(0.45)) { paid = 0; status = 'unpaid'; }
+        else { paid = round2(grand * (0.3 + rand() * 0.5)); status = 'partial'; }
+      }
+
+      invoiceSeq++;
+      const invoiceNo = `INV-${String(invoiceSeq).padStart(4, '0')}`;
+      const isRegistered = chance(0.45);
+      const cIdx = isRegistered ? Math.floor(rand() * customerIds.length) : -1;
+      const customerId = cIdx >= 0 ? customerIds[cIdx] : null;
+      const cName = cIdx >= 0 ? CUSTOMERS[cIdx][0] : 'Walk-in Customer';
+      const ts = fmtDateTime(when);
+      const invoiceId = new mongoose.Types.ObjectId();
+      invoiceDocs.push({
+        _id: invoiceId, businessId: bId, invoice_no: invoiceNo,
+        customer_id: customerId, customer_name: cName, is_interstate: false,
+        date: ts, subtotal: gross, discount: billDiscount, taxable: taxableSum,
+        cgst, sgst, igst: 0, tax_total: taxSum, grand_total: grand, paid,
+        payment_method: method, status, notes: '', created_by: 'Seed', created_at: ts,
+      });
+      for (const l of lines) {
+        itemDocs.push({
+          businessId: bId, invoice_id: invoiceId, product_id: l.p.id, name: l.p.name,
+          qty: l.qty, price: l.p.price, cost: l.p.cost, discount: l.lineDisc, tax_rate: l.p.tax,
+          taxable: l.taxable, tax_amount: l.tax, line_total: l.total, date: ts,
+        });
+      }
+      if (paid > 0) {
+        paymentDocs.push({ businessId: bId, invoice_id: invoiceId, amount: paid, method: method === 'credit' ? 'cash' : method, note: 'Seed', date: ts });
+      }
+    }
+  }
+  if (invoiceDocs.length) await models.Invoice.insertMany(invoiceDocs, { ordered: false });
+  if (itemDocs.length) await models.InvoiceItem.insertMany(itemDocs, { ordered: false });
+  if (paymentDocs.length) await models.Payment.insertMany(paymentDocs, { ordered: false });
+
+  // ---------- purchases (stock-in) ----------
+  const purchaseDocs = [];
+  const purchaseItemDocs = [];
+  let purchaseSeq = 0;
+  for (const d of [70, 56, 41, 27, 12, 3]) {
+    const day = new Date(today);
+    day.setDate(day.getDate() - d);
+    day.setHours(11, 30, 0, 0);
+    const ts = fmtDateTime(day);
+    const supplierIdx = Math.floor(rand() * supplierIds.length);
+    const nLines = 3 + Math.floor(rand() * 4);
+    const chosen = new Map();
+    while (chosen.size < nLines) {
+      chosen.set(Math.floor(rand() * PRODUCTS.length), 0.6 + rand() * 1.6);
+    }
+    let subtotal = 0, taxTotal = 0;
+    const lines = [];
+    for (const [pIdx, qtyFactor] of chosen) {
+      const p = productRows[pIdx];
+      const qty = Math.round(qtyFactor * 24);
+      const taxable = round2(qty * p.cost);
+      const tax = round2((taxable * p.tax) / 100);
+      subtotal = round2(subtotal + taxable);
+      taxTotal = round2(taxTotal + tax);
+      lines.push({ p, qty, taxable, tax, total: round2(taxable + tax) });
+    }
+    const grand = round2(subtotal + taxTotal);
+    purchaseSeq++;
+    const purchaseNo = `PUR-${String(purchaseSeq).padStart(4, '0')}`;
+    const paid = purchaseSeq <= 3 ? grand : round2(grand * (chance(0.75) ? 1 : 0.6));
+    const purchaseId = new mongoose.Types.ObjectId();
+    purchaseDocs.push({
+      _id: purchaseId, businessId: bId, purchase_no: purchaseNo,
+      supplier_id: supplierIds[supplierIdx], supplier_name: SUPPLIERS[supplierIdx][0],
+      date: ts, subtotal, tax_total: taxTotal, grand_total: grand, paid,
+      status: 'received', notes: '', created_at: ts,
+    });
+    for (const l of lines) {
+      purchaseItemDocs.push({
+        businessId: bId, purchase_id: purchaseId, product_id: l.p.id, name: l.p.name,
+        qty: l.qty, cost: l.p.cost, tax_rate: l.p.tax, taxable: l.taxable, tax_amount: l.tax, line_total: l.total,
+      });
+    }
+  }
+  if (purchaseDocs.length) await models.Purchase.insertMany(purchaseDocs, { ordered: false });
+  if (purchaseItemDocs.length) await models.PurchaseItem.insertMany(purchaseItemDocs, { ordered: false });
+
+  // ---------- expenses ----------
+  const expenseDocs = [];
+  for (let m = 2; m >= 0; m--) {
+    const d = new Date(today.getFullYear(), today.getMonth() - m, 5, 10, 0, 0, 0);
+    if (d <= today) expenseDocs.push(['Rent (Shop + Godown)', 7500, d]);
+    const s1 = new Date(today.getFullYear(), today.getMonth() - m, 1, 10, 0, 0, 0);
+    if (s1 <= today) expenseDocs.push(['Salary — Riya (Billing)', 8000, s1]);
+    const s15 = new Date(today.getFullYear(), today.getMonth() - m, 15, 10, 0, 0, 0);
+    if (s15 <= today) expenseDocs.push(['Salary — Riya (Billing)', 8000, s15]);
+    const e = new Date(today.getFullYear(), today.getMonth() - m, 10, 10, 0, 0, 0);
+    if (e <= today) expenseDocs.push(['Electricity (PVVNL)', 2400 + Math.round(rand() * 1100), e]);
+    const net = new Date(today.getFullYear(), today.getMonth() - m, 18, 10, 0, 0, 0);
+    if (net <= today) expenseDocs.push(['Internet & Billing Software', 1299, net]);
+  }
+  for (let i = 0; i < 22; i++) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - Math.floor(rand() * 74));
+    d.setHours(9 + Math.floor(rand() * 11), Math.floor(rand() * 60), 0, 0);
+    expenseDocs.push([pick(['Transport / Dharmkata', 'Packaging (Bags & Labels)', 'Chai & Refreshment', 'Repair & Maintenance', 'Stationery & Printing', 'Miscellaneous']), Math.round(80 + rand() * 700), d]);
+  }
+  await models.Expense.insertMany(expenseDocs.map(([category, amount, when]) => ({
+    businessId: bId, category, amount, date: fmtDateTime(when),
+    payment_method: chance(0.6) ? 'cash' : 'upi', notes: '', created_at: fmtDateTime(when),
+  })));
+
+  // ---------- curated stock levels (healthy + low + one out) ----------
+  const LOW = { 16: 18, 26: 9, 8: 11, 37: 6, 33: 14, 58: 3, 12: 6, 36: 8 };
+  const stockWrites = productRows.map((p) => ({
+    updateOne: {
+      filter: { _id: p.id },
+      update: { $set: { stock: LOW[p.index] !== undefined ? LOW[p.index] : 30 + Math.floor(rand() * 190) } },
+    },
+  }));
+  stockWrites.push({ updateOne: { filter: { _id: productRows[55].id }, update: { $set: { stock: 0 } } } });
+  await models.Product.bulkWrite(stockWrites);
+
+  // ---------- opening stock movements ----------
+  const refreshed = await models.Product.find({ businessId: bId }).select('stock').lean();
+  const nowTs = fmtDateTime(new Date());
+  await models.StockMovement.insertMany(refreshed.map((p) => ({
+    businessId: bId, product_id: p._id, delta: p.stock, reason: 'opening', ref: 'Opening stock', created_at: nowTs,
+  })));
+
+  // ---------- counters ----------
+  await models.Counter.findOneAndUpdate({ businessId: bId, key: 'invoice' }, { $set: { value: invoiceSeq } }, { upsert: true });
+  await models.Counter.findOneAndUpdate({ businessId: bId, key: 'purchase' }, { $set: { value: purchaseSeq } }, { upsert: true });
+
+  const [invoiceCount, productCount, customerCount] = await Promise.all([
+    models.Invoice.countDocuments({ businessId: bId }),
+    models.Product.countDocuments({ businessId: bId }),
+    models.Customer.countDocuments({ businessId: bId }),
+  ]);
+  return { invoices: invoiceCount, products: productCount, customers: customerCount };
 }
